@@ -23,6 +23,24 @@ class RegisterRequest(BaseModel):
         return normalized
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("Invalid email address")
+        return normalized
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
