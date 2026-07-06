@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, JSON, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -120,6 +120,12 @@ class QuestionEvent(Base):
             "session_id",
             "question_id",
             name="uq_question_events_session_id_question_id",
+        ),
+        Index(
+            "uq_question_events_active_session_id",
+            "session_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
         ),
     )
 

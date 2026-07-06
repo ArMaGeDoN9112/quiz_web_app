@@ -17,6 +17,23 @@ def _load_migration_module():
     return module
 
 
+def _load_active_event_index_migration_module():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "20260707_0200_add_active_question_event_unique_index.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "active_question_event_index_migration", migration_path
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_session_migration_extends_question_position_revision() -> None:
     migration = _load_migration_module()
 
@@ -107,3 +124,14 @@ def test_session_migration_declares_expected_foreign_keys() -> None:
         constraint.name == "fk_question_responses_question_event_id_question_events"
         for constraint in constraints_by_table["question_responses"]
     )
+
+
+def test_active_question_event_index_migration_adds_partial_unique_index() -> None:
+    migration = _load_active_event_index_migration_module()
+
+    assert migration.revision == "20260707_0200"
+    assert migration.down_revision == "20260707_0100"
+    assert migration.INDEX_NAME == "uq_question_events_active_session_id"
+    assert migration.TABLE_NAME == "question_events"
+    assert migration.COLUMNS == ["session_id"]
+    assert "status = 'active'" in str(migration.POSTGRESQL_WHERE)
