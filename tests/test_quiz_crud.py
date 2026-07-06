@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -7,6 +8,16 @@ from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
 from app.models import Quiz, QuizStatus, User, UserRole
+from app.services.quiz import list_quizzes
+
+
+DEFAULT_SETTINGS = {
+    "time_limit_seconds": 30,
+    "shuffle_questions": False,
+    "shuffle_answers": False,
+    "show_correct_answers": True,
+    "scoring_mode": "standard",
+}
 
 
 class FakeScalarResult:
@@ -81,7 +92,7 @@ def _quiz(owner_id: UUID, title: str = "Science Bowl") -> Quiz:
         title=title,
         description="Round one",
         status=QuizStatus.DRAFT,
-        settings={},
+        settings=dict(DEFAULT_SETTINGS),
     )
     quiz.id = uuid4()
     quiz.created_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
@@ -122,9 +133,11 @@ def test_organizer_creates_quiz_owned_by_self() -> None:
     assert body["title"] == "Science Bowl"
     assert body["description"] == "Round one"
     assert body["status"] == "draft"
+    assert body["settings"] == DEFAULT_SETTINGS
     assert fake_session.added_quiz is not None
     assert fake_session.added_quiz.owner_id == organizer.id
     assert fake_session.added_quiz.title == "Science Bowl"
+    assert fake_session.added_quiz.settings == DEFAULT_SETTINGS
     assert fake_session.committed is True
 
 
@@ -144,12 +157,25 @@ def test_organizer_lists_only_own_quizzes() -> None:
             "title": "Science Bowl",
             "description": "Round one",
             "status": "draft",
+            "settings": DEFAULT_SETTINGS,
             "created_at": "2026-07-06T12:00:00Z",
             "updated_at": "2026-07-06T12:00:00Z",
         }
     ]
     assert len(fake_session.statements) == 2
     assert fake_session.statements[1].compile().params == {"owner_id_1": organizer.id}
+
+
+def test_list_quizzes_service_returns_owner_quizzes_in_query_order() -> None:
+    organizer = _user("organizer@example.com")
+    first_quiz = _quiz(organizer.id, title="First Quiz")
+    second_quiz = _quiz(organizer.id, title="Second Quiz")
+    fake_session = FakeSession(results=[[first_quiz, second_quiz]])
+
+    quizzes = asyncio.run(list_quizzes(fake_session, organizer))
+
+    assert quizzes == [first_quiz, second_quiz]
+    assert fake_session.statements[0].compile().params == {"owner_id_1": organizer.id}
 
 
 def test_organizer_gets_own_quiz() -> None:
@@ -163,6 +189,7 @@ def test_organizer_gets_own_quiz() -> None:
     assert response.status_code == 200
     assert response.json()["id"] == str(quiz.id)
     assert response.json()["owner_id"] == str(organizer.id)
+    assert response.json()["settings"] == DEFAULT_SETTINGS
     assert fake_session.statements[1].compile().params == {
         "id_1": quiz.id,
         "owner_id_1": organizer.id,
@@ -204,6 +231,68 @@ def test_organizer_updates_own_quiz() -> None:
     assert body["status"] == "published"
     assert quiz.title == "Final Round"
     assert quiz.status is QuizStatus.PUBLISHED
+    assert fake_session.committed is True
+
+
+def test_organizer_creates_quiz_with_settings() -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[organizer])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        "/quizzes",
+        json={
+            "title": "Science Bowl",
+            "settings": {
+                "time_limit_seconds": 45,
+                "shuffle_questions": True,
+                "scoring_mode": "speed_bonus",
+            },
+        },
+        headers=_auth_header(organizer),
+    )
+
+    expected_settings = {
+        **DEFAULT_SETTINGS,
+        "time_limit_seconds": 45,
+        "shuffle_questions": True,
+        "scoring_mode": "speed_bonus",
+    }
+    assert response.status_code == 201
+    assert response.json()["settings"] == expected_settings
+    assert fake_session.added_quiz is not None
+    assert fake_session.added_quiz.settings == expected_settings
+
+
+def test_organizer_updates_quiz_settings_without_resetting_omitted_values() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    quiz.settings = {
+        "time_limit_seconds": 60,
+        "shuffle_questions": True,
+        "shuffle_answers": True,
+        "show_correct_answers": False,
+        "scoring_mode": "speed_bonus",
+    }
+    fake_session = FakeSession(results=[organizer, quiz])
+    client = _client_with_session(fake_session)
+
+    response = client.patch(
+        f"/quizzes/{quiz.id}",
+        json={"settings": {"time_limit_seconds": 90, "shuffle_answers": False}},
+        headers=_auth_header(organizer),
+    )
+
+    expected_settings = {
+        "time_limit_seconds": 90,
+        "shuffle_questions": True,
+        "shuffle_answers": False,
+        "show_correct_answers": False,
+        "scoring_mode": "speed_bonus",
+    }
+    assert response.status_code == 200
+    assert response.json()["settings"] == expected_settings
+    assert quiz.settings == expected_settings
     assert fake_session.committed is True
 
 
@@ -287,6 +376,42 @@ def test_update_rejects_null_status_and_data_is_unchanged() -> None:
     assert response.status_code == 422
     assert quiz.title == original_title
     assert quiz.status is original_status
+    assert fake_session.committed is False
+
+
+def test_update_rejects_null_settings_and_data_is_unchanged() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    original_settings = dict(quiz.settings)
+    fake_session = FakeSession(results=[organizer, quiz])
+    client = _client_with_session(fake_session)
+
+    response = client.patch(
+        f"/quizzes/{quiz.id}",
+        json={"settings": None},
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert quiz.settings == original_settings
+    assert fake_session.committed is False
+
+
+def test_update_rejects_invalid_settings_and_data_is_unchanged() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    original_settings = dict(quiz.settings)
+    fake_session = FakeSession(results=[organizer, quiz])
+    client = _client_with_session(fake_session)
+
+    response = client.patch(
+        f"/quizzes/{quiz.id}",
+        json={"settings": {"time_limit_seconds": 3}},
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert quiz.settings == original_settings
     assert fake_session.committed is False
 
 

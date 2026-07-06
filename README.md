@@ -53,7 +53,7 @@ Acceptance:
 
 - [ ] Quiz CRUD for organizers.
 - [ ] Category management.
-- [ ] Quiz settings: time limits, rules, scoring.
+- [x] Quiz settings: time limits, rules, scoring.
 - [ ] Text and image questions.
 - [ ] Single-choice and multiple-choice answers.
 

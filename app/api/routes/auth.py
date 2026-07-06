@@ -33,7 +33,10 @@ async def register(
     return UserResponse.model_validate(user)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse
+)
 async def login(
     request: LoginRequest,
     session: AsyncSession = Depends(get_db_session),
