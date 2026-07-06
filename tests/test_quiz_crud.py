@@ -2,12 +2,14 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
-from app.models import Quiz, QuizStatus, User, UserRole
+from app.models import Question, Quiz, QuizStatus, User, UserRole
 from app.services.quiz import list_quizzes
 
 
@@ -25,6 +27,12 @@ class FakeScalarResult:
         self.value = value
 
     def scalar_one_or_none(self) -> object | None:
+        return self.value
+
+    def scalar_one(self) -> object:
+        return self.value
+
+    def scalar(self) -> object | None:
         return self.value
 
 
@@ -45,10 +53,16 @@ class FakeListResult:
 
 
 class FakeSession:
-    def __init__(self, results: list[object | list[object] | None]) -> None:
+    def __init__(
+        self,
+        results: list[object | list[object] | None],
+        commit_error: Exception | None = None,
+    ) -> None:
         self.results = results
+        self.commit_error = commit_error
         self.statements: list[object] = []
         self.added_quiz: Quiz | None = None
+        self.added_question: Question | None = None
         self.deleted_quiz: Quiz | None = None
         self.committed = False
         self.rolled_back = False
@@ -60,19 +74,29 @@ class FakeSession:
             return FakeListResult(result)
         return FakeScalarResult(result)
 
-    def add(self, quiz: Quiz) -> None:
-        self.added_quiz = quiz
+    def add(self, obj: object) -> None:
+        if isinstance(obj, Quiz):
+            self.added_quiz = obj
+        if isinstance(obj, Question):
+            self.added_question = obj
 
     async def commit(self) -> None:
+        if self.commit_error is not None:
+            raise self.commit_error
         self.committed = True
 
     async def rollback(self) -> None:
         self.rolled_back = True
 
-    async def refresh(self, quiz: Quiz) -> None:
-        quiz.id = uuid4()
-        quiz.created_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
-        quiz.updated_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
+    async def refresh(self, obj: object) -> None:
+        if isinstance(obj, Quiz):
+            obj.id = uuid4()
+            obj.created_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
+            obj.updated_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
+        if isinstance(obj, Question):
+            obj.id = uuid4()
+            for answer in obj.answers:
+                answer.id = uuid4()
 
     async def delete(self, quiz: Quiz) -> None:
         self.deleted_quiz = quiz
@@ -544,3 +568,288 @@ def test_participant_cannot_delete_quiz() -> None:
     assert fake_session.deleted_quiz is None
     assert fake_session.committed is False
     assert len(fake_session.statements) == 1
+
+
+def test_organizer_adds_text_single_choice_question() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[organizer, quiz, 0])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{quiz.id}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert UUID(body["id"])
+    assert body["quiz_id"] == str(quiz.id)
+    assert body["type"] == "text"
+    assert body["choice_mode"] == "single"
+    assert body["text"] == "Capital of France?"
+    assert body["image_url"] is None
+    assert body["points"] == 1
+    assert body["position"] == 1
+    assert [answer["position"] for answer in body["answers"]] == [1, 2]
+    assert [answer["is_correct"] for answer in body["answers"]] == [True, False]
+    assert fake_session.added_question is not None
+    assert fake_session.added_question.quiz_id == quiz.id
+    assert fake_session.added_question.position == 1
+    assert fake_session.committed is True
+
+
+def test_organizer_adds_image_multiple_choice_question() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[organizer, quiz, 3])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{quiz.id}/questions",
+        json={
+            "type": "image",
+            "choice_mode": "multiple",
+            "text": "Select planets shown.",
+            "image_url": "https://example.com/planets.png",
+            "points": 3,
+            "answers": [
+                {"text": "Earth", "is_correct": True},
+                {"text": "Mars", "is_correct": True},
+                {"text": "Moon", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["type"] == "image"
+    assert body["choice_mode"] == "multiple"
+    assert body["image_url"] == "https://example.com/planets.png"
+    assert body["points"] == 3
+    assert body["position"] == 4
+    assert [answer["is_correct"] for answer in body["answers"]] == [True, True, False]
+    assert fake_session.added_question is not None
+    assert fake_session.added_question.position == 4
+
+
+def test_organizer_adds_image_question_with_http_url() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[organizer, quiz, 0])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{quiz.id}/questions",
+        json={
+            "type": "image",
+            "choice_mode": "single",
+            "text": "What is shown?",
+            "image_url": "http://example.com/object.png",
+            "answers": [
+                {"text": "A comet", "is_correct": True},
+                {"text": "A volcano", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["image_url"] == "http://example.com/object.png"
+    assert fake_session.added_question is not None
+    assert fake_session.added_question.image_url == "http://example.com/object.png"
+
+
+@pytest.mark.parametrize(
+    "image_url",
+    [
+        "javascript:alert(1)",
+        "file:///tmp/object.png",
+        "not-a-url",
+    ],
+)
+def test_question_create_rejects_non_http_image_url(image_url: str) -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[organizer])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{uuid4()}/questions",
+        json={
+            "type": "image",
+            "choice_mode": "single",
+            "text": "What is shown?",
+            "image_url": image_url,
+            "answers": [
+                {"text": "A comet", "is_correct": True},
+                {"text": "A volcano", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+
+
+def test_question_create_rejects_single_choice_without_exactly_one_correct_answer() -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[organizer])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{uuid4()}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Lyon", "is_correct": True},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+
+
+def test_question_create_rejects_multiple_choice_with_fewer_than_two_correct_answers() -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[organizer])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{uuid4()}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "multiple",
+            "text": "Select prime numbers.",
+            "answers": [
+                {"text": "2", "is_correct": True},
+                {"text": "4", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+
+
+def test_question_create_rejects_image_question_without_image_url() -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[organizer])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{uuid4()}/questions",
+        json={
+            "type": "image",
+            "choice_mode": "single",
+            "text": "What is shown?",
+            "answers": [
+                {"text": "A comet", "is_correct": True},
+                {"text": "A volcano", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 422
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+
+
+def test_non_owner_cannot_add_question_to_quiz() -> None:
+    organizer = _user("organizer@example.com")
+    quiz_id = uuid4()
+    fake_session = FakeSession(results=[organizer, None])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{quiz_id}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Quiz not found"}
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+
+
+def test_participant_cannot_add_question_to_quiz() -> None:
+    participant = _user("participant@example.com", role=UserRole.PARTICIPANT)
+    fake_session = FakeSession(results=[participant])
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{uuid4()}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(participant),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Organizer role required"}
+    assert fake_session.added_question is None
+    assert fake_session.committed is False
+    assert len(fake_session.statements) == 1
+
+
+def test_question_position_conflict_returns_409() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(
+        results=[organizer, quiz, 0],
+        commit_error=IntegrityError("insert question", {}, Exception("unique conflict")),
+    )
+    client = _client_with_session(fake_session)
+
+    response = client.post(
+        f"/quizzes/{quiz.id}/questions",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Question position conflict; retry request"}
+    assert fake_session.rolled_back is True

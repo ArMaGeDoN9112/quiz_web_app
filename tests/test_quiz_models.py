@@ -55,6 +55,11 @@ def test_category_table_has_unique_name() -> None:
 
 def test_question_table_constrains_type_and_choice_mode() -> None:
     table = Question.__table__
+    unique_columns = {
+        tuple(constraint.columns.keys())
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
 
     assert table.name == "questions"
     assert set(table.c.keys()) == {
@@ -76,6 +81,7 @@ def test_question_table_constrains_type_and_choice_mode() -> None:
     assert table.c.category_id.nullable is True
     assert table.c.points.nullable is False
     assert table.c.position.nullable is False
+    assert ("quiz_id", "position") in unique_columns
 
 
 def test_answer_table_matches_database_contract() -> None:

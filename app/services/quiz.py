@@ -1,14 +1,23 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Quiz, QuizStatus, User
-from app.schemas.quiz import QuizCreateRequest, QuizSettings, QuizUpdateRequest
+from app.models import Answer, Question, Quiz, QuizStatus, User
+from app.schemas.quiz import (
+    QuestionCreateRequest,
+    QuizCreateRequest,
+    QuizSettings,
+    QuizUpdateRequest,
+)
 
 
 class QuizNotFoundError(Exception):
+    pass
+
+
+class QuestionPositionConflictError(Exception):
     pass
 
 
@@ -72,6 +81,43 @@ class QuizService:
         await self.session.delete(quiz)
         await self.session.commit()
 
+    async def create_question(self, quiz_id: UUID, data: QuestionCreateRequest) -> Question:
+        await self.get(quiz_id)
+        position = await self._next_question_position(quiz_id)
+        question = Question(
+            quiz_id=quiz_id,
+            type=data.type,
+            choice_mode=data.choice_mode,
+            text=data.text,
+            image_url=data.image_url,
+            points=data.points,
+            position=position,
+            answers=[
+                Answer(
+                    text=answer.text,
+                    is_correct=answer.is_correct,
+                    position=index,
+                )
+                for index, answer in enumerate(data.answers, start=1)
+            ],
+        )
+        self.session.add(question)
+        try:
+            await self.session.commit()
+        except IntegrityError as error:
+            await self.session.rollback()
+            raise QuestionPositionConflictError from error
+        await self.session.refresh(question)
+        return question
+
+    async def _next_question_position(self, quiz_id: UUID) -> int:
+        result = await self.session.execute(
+            select(func.coalesce(func.max(Question.position), 0)).where(
+                Question.quiz_id == quiz_id
+            )
+        )
+        return int(result.scalar_one()) + 1
+
     def _merge_settings(
         self,
         current_settings: dict[str, object],
@@ -109,3 +155,12 @@ async def update_quiz(
 
 async def delete_quiz(session: AsyncSession, owner: User, quiz_id: UUID) -> None:
     await QuizService(session, owner).delete(quiz_id)
+
+
+async def create_question(
+    session: AsyncSession,
+    owner: User,
+    quiz_id: UUID,
+    data: QuestionCreateRequest,
+) -> Question:
+    return await QuizService(session, owner).create_question(quiz_id, data)

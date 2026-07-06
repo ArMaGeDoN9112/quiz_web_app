@@ -95,6 +95,13 @@ class Quiz(Base):
 
 class Question(Base):
     __tablename__ = "questions"
+    __table_args__ = (
+        UniqueConstraint(
+            "quiz_id",
+            "position",
+            name="uq_questions_quiz_id_position",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

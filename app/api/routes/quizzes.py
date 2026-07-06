@@ -6,9 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import require_organizer
 from app.db.session import get_db_session
 from app.models import User
-from app.schemas.quiz import QuizCreateRequest, QuizResponse, QuizUpdateRequest
+from app.schemas.quiz import (
+    QuestionCreateRequest,
+    QuestionResponse,
+    QuizCreateRequest,
+    QuizResponse,
+    QuizUpdateRequest,
+)
 from app.services.quiz import (
+    QuestionPositionConflictError,
     QuizNotFoundError,
+    create_question,
     create_quiz,
     delete_quiz,
     get_quiz,
@@ -85,3 +93,29 @@ async def delete_quiz_endpoint(
             detail="Quiz not found",
         ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{quiz_id}/questions",
+    response_model=QuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_question_endpoint(
+    quiz_id: UUID,
+    request: QuestionCreateRequest,
+    current_user: User = Depends(require_organizer),
+    session: AsyncSession = Depends(get_db_session),
+) -> QuestionResponse:
+    try:
+        question = await create_question(session, current_user, quiz_id, request)
+    except QuizNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        ) from error
+    except QuestionPositionConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Question position conflict; retry request",
+        ) from error
+    return QuestionResponse.model_validate(question)

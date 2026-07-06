@@ -17,6 +17,21 @@ def _load_migration_module():
     return module
 
 
+def _load_position_migration_module():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "20260707_0001_add_question_position_unique_constraint.py"
+    )
+    spec = importlib.util.spec_from_file_location("question_position_migration", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_quiz_migration_extends_user_revision() -> None:
     migration = _load_migration_module()
 
@@ -76,3 +91,13 @@ def test_quiz_migration_declares_expected_foreign_keys() -> None:
         constraint.name == "fk_answers_question_id_questions"
         for constraint in constraints_by_table["answers"]
     )
+
+
+def test_question_position_migration_adds_unique_constraint() -> None:
+    migration = _load_position_migration_module()
+
+    assert migration.revision == "20260707_0001"
+    assert migration.down_revision == "20260706_1800"
+    assert migration.CONSTRAINT_NAME == "uq_questions_quiz_id_position"
+    assert migration.TABLE_NAME == "questions"
+    assert migration.COLUMNS == ["quiz_id", "position"]
