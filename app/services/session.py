@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Quiz, QuizSession, SessionStatus, User
+from app.models import Quiz, QuizSession, SessionParticipant, SessionStatus, User
 
 ROOM_CODE_ALPHABET = string.ascii_uppercase + string.digits
 ROOM_CODE_LENGTH = 6
@@ -19,6 +19,14 @@ class SessionQuizNotFoundError(Exception):
 
 
 class RoomCodeConflictError(Exception):
+    pass
+
+
+class SessionNotJoinableError(Exception):
+    pass
+
+
+class DuplicateSessionParticipantError(Exception):
     pass
 
 
@@ -76,3 +84,47 @@ async def launch_session(
         return quiz_session
 
     raise RoomCodeConflictError from last_room_code_error
+
+
+async def join_session(
+    session: AsyncSession,
+    participant: User,
+    room_code: str,
+    display_name: str,
+) -> SessionParticipant:
+    result = await session.execute(
+        select(QuizSession).where(QuizSession.room_code == room_code)
+    )
+    quiz_session = result.scalar_one_or_none()
+    if quiz_session is None or quiz_session.status is SessionStatus.ENDED:
+        raise SessionNotJoinableError
+
+    existing_result = await session.execute(
+        select(SessionParticipant).where(
+            SessionParticipant.session_id == quiz_session.id,
+            SessionParticipant.user_id == participant.id,
+        )
+    )
+    if existing_result.scalar_one_or_none() is not None:
+        raise DuplicateSessionParticipantError
+
+    session_participant = SessionParticipant(
+        session_id=quiz_session.id,
+        user_id=participant.id,
+        display_name=display_name,
+    )
+    session.add(session_participant)
+
+    try:
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        if (
+            _integrity_constraint_name(error)
+            == "uq_session_participants_session_id_user_id"
+        ):
+            raise DuplicateSessionParticipantError from error
+        raise
+
+    await session.refresh(session_participant)
+    return session_participant
