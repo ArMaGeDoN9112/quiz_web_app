@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local editor/OS files
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Docker/runtime
+*.log
+
+.agents
+tasks
+docs
+skills-lock.json
