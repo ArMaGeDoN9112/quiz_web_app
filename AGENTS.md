@@ -2,9 +2,14 @@
 
 ## Project
 
-Backend for live quiz web app.
+Monorepo for live quiz web app.
 
-Stack:
+```
+backend/   FastAPI API
+frontend/  React UI
+```
+
+Stack (backend):
 
 - Python 3.12
 - FastAPI
@@ -37,16 +42,17 @@ If a skill is named in a task file, read it before editing code.
 
 ## Architecture Rules
 
-Keep layers separated:
+Keep layers separated (under `backend/`):
 
-- `app/api/routes/`: HTTP/WebSocket route handlers only.
-- `app/schemas/`: Pydantic request/response models.
-- `app/models/`: SQLAlchemy ORM models.
-- `app/services/`: business logic.
-- `app/repositories/`: database query helpers when queries become non-trivial.
-- `app/core/`: config, security, app-wide primitives.
-- `app/db/`: engine/session/base metadata.
-- `tests/`: pytest tests.
+- `backend/app/api/routes/`: HTTP/WebSocket route handlers only.
+- `backend/app/schemas/`: Pydantic request/response models.
+- `backend/app/models/`: SQLAlchemy ORM models.
+- `backend/app/services/`: business logic.
+- `backend/app/repositories/`: database query helpers when queries become non-trivial.
+- `backend/app/core/`: config, security, app-wide primitives.
+- `backend/app/db/`: engine/session/base metadata.
+- `backend/tests/`: pytest tests.
+- `frontend/src/`: React pages, components, API client.
 
 Routes should validate input, call services, and return schemas. Do not put business workflows directly in route handlers.
 
@@ -66,25 +72,27 @@ Routes should validate input, call services, and return schemas. Do not put busi
 Install deps:
 
 ```bash
-python -m pip install -r requirements-dev.txt
+cd backend && python -m pip install -r requirements-dev.txt
+cd frontend && npm install
 ```
 
 Run tests:
 
 ```bash
-python -m pytest -q
+cd backend && python -m pytest -q
 ```
 
 Compile check:
 
 ```bash
-python -m py_compile app/main.py
+cd backend && python -m py_compile app/main.py
 ```
 
 Run app:
 
 ```bash
-uvicorn app.main:app --reload
+cd backend && uvicorn app.main:app --reload
+cd frontend && npm run dev
 ```
 
 Run Docker:
@@ -96,7 +104,7 @@ docker compose up --build
 Run migrations:
 
 ```bash
-alembic upgrade head
+cd backend && alembic upgrade head
 ```
 
 ## Definition of Done

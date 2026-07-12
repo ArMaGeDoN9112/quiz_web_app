@@ -1,15 +1,25 @@
 services:
   api:
-    build: .
+    build: ./backend
     ports:
       - "8000:8000"
     environment:
       APP_NAME: Quiz Backend
       ENVIRONMENT: local
       DATABASE_URL: postgresql+asyncpg://quiz:quiz@db:5432/quiz
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     depends_on:
       db:
         condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - api
 
   db:
     image: postgres:16-alpine
@@ -29,4 +39,3 @@ services:
 
 volumes:
   postgres_data:
-
