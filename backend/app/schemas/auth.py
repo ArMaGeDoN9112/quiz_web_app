@@ -41,9 +41,22 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ProfileUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Display name is required")
+        return normalized
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
+    display_name: str | None
     role: UserRole
     created_at: datetime
     updated_at: datetime

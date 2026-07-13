@@ -15,6 +15,7 @@ from app.services.quiz import list_questions, list_quizzes
 
 DEFAULT_SETTINGS = {
     "time_limit_seconds": 30,
+    "playback_mode": "manual",
     "shuffle_questions": False,
     "shuffle_answers": False,
     "show_correct_answers": True,
@@ -64,6 +65,7 @@ class FakeSession:
         self.added_quiz: Quiz | None = None
         self.added_question: Question | None = None
         self.deleted_quiz: Quiz | None = None
+        self.refresh_attribute_names: list[list[str] | None] = []
         self.committed = False
         self.rolled_back = False
 
@@ -88,7 +90,12 @@ class FakeSession:
     async def rollback(self) -> None:
         self.rolled_back = True
 
-    async def refresh(self, obj: object) -> None:
+    async def refresh(
+        self,
+        obj: object,
+        attribute_names: list[str] | None = None,
+    ) -> None:
+        self.refresh_attribute_names.append(attribute_names)
         if isinstance(obj, Quiz):
             obj.id = uuid4()
             obj.created_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
@@ -132,6 +139,7 @@ def _question(quiz_id: UUID, position: int = 1) -> Question:
         text="Capital of France?",
         image_url=None,
         points=1,
+        duration_seconds=30,
         position=position,
         answers=[
             Answer(text="Paris", is_correct=True, position=1),
@@ -275,6 +283,7 @@ def test_organizer_lists_questions_for_own_quiz() -> None:
             "text": "Capital of France?",
             "image_url": None,
             "points": 1,
+            "duration_seconds": 30,
             "position": 1,
             "answers": [
                 {
@@ -381,6 +390,23 @@ def test_organizer_creates_quiz_with_settings() -> None:
     assert fake_session.added_quiz.settings == expected_settings
 
 
+def test_organizer_sets_automatic_playback_mode() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[organizer, quiz])
+    client = _client_with_session(fake_session)
+
+    response = client.patch(
+        f"/quizzes/{quiz.id}",
+        json={"settings": {"playback_mode": "automatic"}},
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["settings"]["playback_mode"] == "automatic"
+    assert quiz.settings["playback_mode"] == "automatic"
+
+
 def test_organizer_updates_quiz_settings_without_resetting_omitted_values() -> None:
     organizer = _user("organizer@example.com")
     quiz = _quiz(organizer.id)
@@ -390,6 +416,7 @@ def test_organizer_updates_quiz_settings_without_resetting_omitted_values() -> N
         "shuffle_answers": True,
         "show_correct_answers": False,
         "scoring_mode": "speed_bonus",
+        "playback_mode": "manual",
     }
     fake_session = FakeSession(results=[organizer, quiz])
     client = _client_with_session(fake_session)
@@ -406,6 +433,7 @@ def test_organizer_updates_quiz_settings_without_resetting_omitted_values() -> N
         "shuffle_answers": False,
         "show_correct_answers": False,
         "scoring_mode": "speed_bonus",
+        "playback_mode": "manual",
     }
     assert response.status_code == 200
     assert response.json()["settings"] == expected_settings
@@ -675,6 +703,7 @@ def test_organizer_adds_text_single_choice_question() -> None:
             "type": "text",
             "choice_mode": "single",
             "text": "Capital of France?",
+            "duration_seconds": 45,
             "answers": [
                 {"text": "Paris", "is_correct": True},
                 {"text": "Rome", "is_correct": False},
@@ -692,6 +721,7 @@ def test_organizer_adds_text_single_choice_question() -> None:
     assert body["text"] == "Capital of France?"
     assert body["image_url"] is None
     assert body["points"] == 1
+    assert body["duration_seconds"] == 45
     assert body["position"] == 1
     assert [answer["position"] for answer in body["answers"]] == [1, 2]
     assert [answer["is_correct"] for answer in body["answers"]] == [True, False]
@@ -699,6 +729,7 @@ def test_organizer_adds_text_single_choice_question() -> None:
     assert fake_session.added_question.quiz_id == quiz.id
     assert fake_session.added_question.position == 1
     assert fake_session.committed is True
+    assert fake_session.refresh_attribute_names == [["answers"]]
 
 
 def test_organizer_adds_image_multiple_choice_question() -> None:
@@ -734,6 +765,66 @@ def test_organizer_adds_image_multiple_choice_question() -> None:
     assert [answer["is_correct"] for answer in body["answers"]] == [True, True, False]
     assert fake_session.added_question is not None
     assert fake_session.added_question.position == 4
+
+
+def test_organizer_edits_existing_question_and_replaces_answers() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    question = _question(quiz.id)
+    fake_session = FakeSession(results=[organizer, quiz, question])
+    client = _client_with_session(fake_session)
+
+    response = client.put(
+        f"/quizzes/{quiz.id}/questions/{question.id}",
+        json={
+            "type": "text",
+            "choice_mode": "multiple",
+            "text": "Select planets.",
+            "image_url": None,
+            "points": 7,
+            "answers": [
+                {"text": "Earth", "is_correct": True},
+                {"text": "Mars", "is_correct": True},
+                {"text": "Moon", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "Select planets."
+    assert response.json()["choice_mode"] == "multiple"
+    assert response.json()["points"] == 7
+    assert [answer["text"] for answer in response.json()["answers"]] == ["Earth", "Mars", "Moon"]
+    assert [answer["position"] for answer in response.json()["answers"]] == [1, 2, 3]
+    assert question.position == 1
+    assert fake_session.committed is True
+
+
+def test_organizer_cannot_edit_question_outside_owned_quiz() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[organizer, quiz, None])
+    client = _client_with_session(fake_session)
+
+    response = client.put(
+        f"/quizzes/{quiz.id}/questions/{uuid4()}",
+        json={
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "image_url": None,
+            "points": 1,
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        },
+        headers=_auth_header(organizer),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Question not found"}
 
 
 def test_organizer_adds_image_question_with_http_url() -> None:

@@ -52,6 +52,7 @@ class FakeSession:
 
 def _user(email: str, role: UserRole = UserRole.PARTICIPANT) -> User:
     user = User(email=email, password_hash="hashed-password", role=role)
+    user.display_name = "Ada Lovelace"
     user.id = uuid4()
     user.created_at = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)
     user.updated_at = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)
@@ -105,7 +106,7 @@ def test_participant_joins_waiting_session() -> None:
 
     response = client.post(
         "/sessions/join",
-        json={"room_code": " abc123 ", "display_name": "Ada Lovelace"},
+        json={"room_code": " abc123 ", "display_name": "Different name"},
         headers=_auth_header(participant_user),
     )
 
@@ -126,7 +127,7 @@ def test_join_session_rejects_ended_room() -> None:
     fake_session = FakeSession(results=[ended_session])
 
     try:
-        asyncio.run(join_session(fake_session, participant_user, "ABC123", "Ada"))
+        asyncio.run(join_session(fake_session, participant_user, "ABC123"))
     except SessionNotJoinableError:
         pass
     else:
@@ -143,7 +144,7 @@ def test_join_session_rejects_duplicate_participant() -> None:
     fake_session = FakeSession(results=[quiz_session, existing_participant])
 
     try:
-        asyncio.run(join_session(fake_session, participant_user, "ABC123", "Ada"))
+        asyncio.run(join_session(fake_session, participant_user, "ABC123"))
     except DuplicateSessionParticipantError:
         pass
     else:
@@ -160,7 +161,7 @@ def test_join_endpoint_maps_inactive_room_to_404() -> None:
 
     response = client.post(
         "/sessions/join",
-        json={"room_code": "MISSING", "display_name": "Ada"},
+        json={"room_code": "MISSING"},
         headers=_auth_header(participant_user),
     )
 
@@ -177,7 +178,7 @@ def test_join_endpoint_maps_duplicate_join_to_409() -> None:
 
     response = client.post(
         "/sessions/join",
-        json={"room_code": "ABC123", "display_name": "Ada"},
+        json={"room_code": "ABC123"},
         headers=_auth_header(participant_user),
     )
 
@@ -192,7 +193,7 @@ def test_join_endpoint_requires_participant_role() -> None:
 
     response = client.post(
         "/sessions/join",
-        json={"room_code": "ABC123", "display_name": "Ada"},
+        json={"room_code": "ABC123"},
         headers=_auth_header(organizer),
     )
 
@@ -201,16 +202,18 @@ def test_join_endpoint_requires_participant_role() -> None:
     assert fake_session.added_participants == []
 
 
-def test_join_endpoint_rejects_blank_display_name_after_trimming() -> None:
+def test_join_endpoint_requires_profile_display_name() -> None:
     participant_user = _user("participant@example.com")
+    participant_user.display_name = None
     fake_session = FakeSession(results=[participant_user])
     client = _client_with_session(fake_session)
 
     response = client.post(
         "/sessions/join",
-        json={"room_code": "ABC123", "display_name": "   "},
+        json={"room_code": "ABC123"},
         headers=_auth_header(participant_user),
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Profile display name required"}
     assert fake_session.added_participants == []

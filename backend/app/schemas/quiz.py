@@ -14,6 +14,7 @@ class QuizSettings(BaseModel):
     shuffle_answers: bool = False
     show_correct_answers: bool = True
     scoring_mode: Literal["standard", "speed_bonus"] = "standard"
+    playback_mode: Literal["manual", "automatic"] = "manual"
 
 
 class QuizSettingsUpdate(BaseModel):
@@ -22,6 +23,7 @@ class QuizSettingsUpdate(BaseModel):
     shuffle_answers: bool | None = None
     show_correct_answers: bool | None = None
     scoring_mode: Literal["standard", "speed_bonus"] | None = None
+    playback_mode: Literal["manual", "automatic"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -92,6 +94,7 @@ class QuestionCreateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     image_url: str | None = Field(default=None, max_length=2048)
     points: int = Field(default=1, ge=1, le=1000)
+    duration_seconds: int = Field(default=30, ge=5, le=3600)
     answers: list[AnswerCreateRequest] = Field(min_length=2, max_length=20)
 
     @field_validator("text")
@@ -153,6 +156,7 @@ class QuestionResponse(BaseModel):
     text: str
     image_url: str | None
     points: int
+    duration_seconds: int
     position: int
     answers: list[AnswerResponse]
 

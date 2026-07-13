@@ -14,7 +14,7 @@ import {
   type QuestionField,
   type QuestionFormErrors,
 } from '../features/questionAuthoring'
-import type { ChoiceMode, Question, QuestionType, Quiz } from '../types/api'
+import type { ChoiceMode, PlaybackMode, Question, QuestionType, Quiz } from '../types/api'
 
 let answerIndex = 0
 
@@ -30,7 +30,23 @@ function createInitialDraft(): QuestionDraft {
     text: '',
     imageUrl: '',
     points: '1',
+    durationSeconds: '30',
     answers: [createDraftAnswer('', true), createDraftAnswer()],
+  }
+}
+
+function draftFromQuestion(question: Question): QuestionDraft {
+  return {
+    type: question.type,
+    choiceMode: question.choice_mode,
+    text: question.text,
+    imageUrl: question.image_url ?? '',
+    points: String(question.points),
+    durationSeconds: String(question.duration_seconds),
+    answers: question.answers
+      .slice()
+      .sort((left, right) => left.position - right.position)
+      .map((answer) => ({ id: answer.id, text: answer.text, isCorrect: answer.is_correct })),
   }
 }
 
@@ -44,6 +60,7 @@ function backendErrors(error: unknown): QuestionFormErrors {
     if (field === 'text') errors.text = detail.msg
     if (field === 'image_url') errors.imageUrl = detail.msg
     if (field === 'points') errors.points = detail.msg
+    if (field === 'duration_seconds') errors.durationSeconds = detail.msg
     if (field === 'answers') errors.answers = detail.msg
     if (detail.msg.includes('correct answer')) errors.correctAnswers = detail.msg
     if (detail.msg.includes('image_url') || detail.msg.includes('Image URL')) {
@@ -70,6 +87,9 @@ export function QuizEditorPage() {
   const [pageError, setPageError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loadingEditor, setLoadingEditor] = useState(true)
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('manual')
+  const [savingPlaybackMode, setSavingPlaybackMode] = useState(false)
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) {
@@ -88,6 +108,7 @@ export function QuizEditorPage() {
       .then(([loadedQuiz, loadedQuestions]) => {
         setQuiz(loadedQuiz)
         setQuestions(loadedQuestions)
+        setPlaybackMode(loadedQuiz.settings.playback_mode)
       })
       .catch((err) => {
         setPageError(err instanceof Error ? err.message : 'Failed to load quiz editor')
@@ -182,6 +203,19 @@ export function QuizEditorPage() {
     })
   }
 
+  const savePlaybackMode = async () => {
+    if (!quizId) return
+    setSavingPlaybackMode(true)
+    setPageError('')
+    try {
+      setQuiz(await api.updateQuizPlaybackMode(quizId, playbackMode))
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Could not save playback mode')
+    } finally {
+      setSavingPlaybackMode(false)
+    }
+  }
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!quizId) {
@@ -197,9 +231,14 @@ export function QuizEditorPage() {
 
     setBusy(true)
     try {
-      await api.createQuestion(quizId, buildQuestionPayload(draft))
+      if (editingQuestionId) {
+        await api.updateQuestion(quizId, editingQuestionId, buildQuestionPayload(draft))
+      } else {
+        await api.createQuestion(quizId, buildQuestionPayload(draft))
+      }
       setQuestions(await api.listQuestions(quizId))
       setDraft(createInitialDraft())
+      setEditingQuestionId(null)
       setErrors({})
     } catch (err) {
       const fieldErrors = backendErrors(err)
@@ -259,6 +298,9 @@ export function QuizEditorPage() {
                 {quiz.settings.scoring_mode}
               </span>
               <span className="rounded-lg border border-white/10 bg-void/50 px-3 py-2">
+                {quiz.settings.playback_mode} playback
+              </span>
+              <span className="rounded-lg border border-white/10 bg-void/50 px-3 py-2">
                 Shuffle answers: {quiz.settings.shuffle_answers ? 'on' : 'off'}
               </span>
             </div>
@@ -267,7 +309,41 @@ export function QuizEditorPage() {
 
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <GlassPanel glow="aurora">
-            <h2 className="font-display text-lg">Add question</h2>
+            <div className="mb-6 rounded-lg border border-aurora/25 bg-aurora/5 p-4">
+              <label className="field">
+                <span>Playback mode</span>
+                <select
+                  value={playbackMode}
+                  onChange={(event) => setPlaybackMode(event.target.value as PlaybackMode)}
+                >
+                  <option value="manual">Manual — organizer starts each question</option>
+                  <option value="automatic">Automatic — runs every question in order</option>
+                </select>
+              </label>
+              <p className="mt-2 font-body text-xs text-muted">
+                Automatic mode uses each question's duration and ends the session after the last question.
+              </p>
+              <button
+                type="button"
+                className="btn-ghost mt-3 text-xs"
+                onClick={savePlaybackMode}
+                disabled={savingPlaybackMode || playbackMode === quiz?.settings.playback_mode}
+              >
+                {savingPlaybackMode ? 'Saving…' : 'Save playback mode'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-lg">{editingQuestionId ? 'Edit question' : 'Add question'}</h2>
+              {editingQuestionId && (
+                <button type="button" className="btn-ghost text-xs" onClick={() => {
+                  setDraft(createInitialDraft())
+                  setEditingQuestionId(null)
+                  setErrors({})
+                }}>
+                  Cancel
+                </button>
+              )}
+            </div>
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="field">
@@ -303,7 +379,7 @@ export function QuizEditorPage() {
                 {errors.text && <strong className="text-xs font-medium text-plasma">{errors.text}</strong>}
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
+              <div className="grid gap-4 sm:grid-cols-[1fr_160px_160px]">
                 <label className="field">
                   <span>Image URL</span>
                   <input
@@ -325,6 +401,19 @@ export function QuizEditorPage() {
                   />
                   {errors.points && (
                     <strong className="text-xs font-medium text-plasma">{errors.points}</strong>
+                  )}
+                </label>
+                <label className="field">
+                  <span>Duration (sec)</span>
+                  <input
+                    value={draft.durationSeconds}
+                    onChange={(event) => setDraftField('durationSeconds', event.target.value)}
+                    inputMode="numeric"
+                    min="5"
+                    max="3600"
+                  />
+                  {errors.durationSeconds && (
+                    <strong className="text-xs font-medium text-plasma">{errors.durationSeconds}</strong>
                   )}
                 </label>
               </div>
@@ -403,7 +492,7 @@ export function QuizEditorPage() {
               </div>
 
               <button type="submit" disabled={busy} className="btn-primary w-full">
-                {busy ? 'Saving…' : 'Save question'}
+                {busy ? 'Saving…' : editingQuestionId ? 'Save changes' : 'Save question'}
               </button>
             </form>
           </GlassPanel>
@@ -424,7 +513,17 @@ export function QuizEditorPage() {
                       <span className="font-body text-xs uppercase tracking-wider text-aurora">
                         Question {question.position}
                       </span>
-                      <span className="font-body text-xs text-muted">{question.points} pt</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-body text-xs text-muted">{question.points} pt · {question.duration_seconds}s</span>
+                        <button type="button" className="btn-ghost text-xs" onClick={() => {
+                          setDraft(draftFromQuestion(question))
+                          setEditingQuestionId(question.id)
+                          setErrors({})
+                          setPageError('')
+                        }}>
+                          Edit
+                        </button>
+                      </div>
                     </div>
                     <h3 className="font-body text-sm font-medium text-foreground">{question.text}</h3>
                     <p className="mt-2 font-body text-xs text-muted">

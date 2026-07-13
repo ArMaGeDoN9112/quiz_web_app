@@ -12,6 +12,7 @@ export interface QuestionDraft {
   text: string
   imageUrl: string
   points: string
+  durationSeconds: string
   answers: DraftAnswer[]
 }
 
@@ -19,6 +20,7 @@ export type QuestionField =
   | 'text'
   | 'imageUrl'
   | 'points'
+  | 'durationSeconds'
   | 'answers'
   | 'correctAnswers'
 
@@ -39,6 +41,7 @@ export function validateQuestionDraft(draft: QuestionDraft): QuestionFormErrors 
   const filledAnswerCount = trimmedAnswers.filter(Boolean).length
   const correctCount = draft.answers.filter((answer) => answer.isCorrect && answer.text.trim()).length
   const points = Number(draft.points)
+  const durationSeconds = Number(draft.durationSeconds)
   const imageUrl = draft.imageUrl.trim()
 
   if (!draft.text.trim()) {
@@ -47,6 +50,9 @@ export function validateQuestionDraft(draft: QuestionDraft): QuestionFormErrors 
 
   if (!Number.isInteger(points) || points < 1 || points > 1000) {
     errors.points = 'Points must be an integer from 1 to 1000.'
+  }
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 5 || durationSeconds > 3600) {
+    errors.durationSeconds = 'Duration must be an integer from 5 to 3600 seconds.'
   }
 
   if (draft.type === 'image') {
@@ -81,6 +87,7 @@ export function buildQuestionPayload(draft: QuestionDraft): QuestionCreateReques
     text: draft.text.trim(),
     image_url: draft.type === 'image' ? draft.imageUrl.trim() : null,
     points: Number(draft.points),
+    duration_seconds: Number(draft.durationSeconds),
     answers: draft.answers.map((answer) => ({
       text: answer.text.trim(),
       is_correct: answer.isCorrect,

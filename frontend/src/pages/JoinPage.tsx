@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { AppShell } from '../components/AppShell'
@@ -11,7 +11,6 @@ export function JoinPage() {
   const { user, loading } = useAuth()
   const navigate = useNavigate()
   const [roomCode, setRoomCode] = useState('')
-  const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -29,7 +28,7 @@ export function JoinPage() {
     setError('')
     setSubmitting(true)
     try {
-      const participant = await api.joinSession(roomCode, displayName)
+      const participant = await api.joinSession(roomCode)
       navigate(`/room/${participant.session_id}`, { state: { participant } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not join session')
@@ -58,7 +57,7 @@ export function JoinPage() {
           </p>
           <h1 className="mt-2 font-display text-2xl text-foreground">Join live room</h1>
           <p className="mt-2 font-body text-sm text-muted">
-            Enter the code from your host screen and pick a display name.
+            Enter the code from your host screen. Your profile name is used in every quiz.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
@@ -72,19 +71,15 @@ export function JoinPage() {
                 className="font-display tracking-[0.3em]"
               />
             </label>
-            <label className="field">
-              <span>Display name</span>
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                required
-                placeholder="Nova"
-              />
-            </label>
-
             {error && <p className="error-text">{error}</p>}
 
-            <button type="submit" disabled={submitting} className="btn-secondary w-full">
+            {!user.display_name && (
+              <p className="font-body text-sm text-muted">
+                Set a profile name on your <Link to="/dashboard" className="text-aurora hover:underline">dashboard</Link> before joining.
+              </p>
+            )}
+
+            <button type="submit" disabled={submitting || !user.display_name} className="btn-secondary w-full">
               {submitting ? 'Connecting…' : 'Enter room'}
             </button>
           </form>

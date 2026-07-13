@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import QuestionEventStatus, SessionStatus
+from app.models import ChoiceMode, QuestionEventStatus, QuestionType, SessionStatus
 
 
 class SessionLaunchRequest(BaseModel):
@@ -12,7 +12,6 @@ class SessionLaunchRequest(BaseModel):
 
 class SessionJoinRequest(BaseModel):
     room_code: str = Field(min_length=1, max_length=16)
-    display_name: str = Field(min_length=1, max_length=100)
 
     @field_validator("room_code")
     @classmethod
@@ -21,15 +20,6 @@ class SessionJoinRequest(BaseModel):
         if not normalized:
             raise ValueError("Room code is required")
         return normalized
-
-    @field_validator("display_name")
-    @classmethod
-    def normalize_display_name(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Display name is required")
-        return normalized
-
 
 class SessionResponse(BaseModel):
     id: uuid.UUID
@@ -70,6 +60,24 @@ class QuestionEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PublicAnswerResponse(BaseModel):
+    id: uuid.UUID
+    text: str
+    position: int
+
+
+class CurrentQuestionResponse(BaseModel):
+    event_id: uuid.UUID
+    session_id: uuid.UUID
+    question_id: uuid.UUID
+    type: QuestionType
+    choice_mode: ChoiceMode
+    text: str
+    image_url: str | None
+    ends_at: datetime | None
+    answers: list[PublicAnswerResponse]
+
+
 class SubmitAnswerRequest(BaseModel):
     question_id: uuid.UUID
     selected_answer_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
@@ -108,5 +116,35 @@ class ScoreboardEntryResponse(BaseModel):
 class SessionScoreboardResponse(BaseModel):
     session_id: uuid.UUID
     status: SessionStatus
+    entries: list[ScoreboardEntryResponse]
+    winner_ids: list[uuid.UUID]
+
+
+class ParticipantSessionHistoryResponse(BaseModel):
+    session_id: uuid.UUID
+    quiz_id: uuid.UUID
+    quiz_title: str
+    ended_at: datetime
+    score: int
+    rank: int
+    participant_count: int
+
+
+class OrganizerSessionHistoryResponse(BaseModel):
+    session_id: uuid.UUID
+    quiz_id: uuid.UUID
+    quiz_title: str
+    ended_at: datetime
+    participant_count: int
+    winner_names: list[str]
+
+
+class SessionResultResponse(BaseModel):
+    session_id: uuid.UUID
+    quiz_id: uuid.UUID
+    quiz_title: str
+    organizer_id: uuid.UUID
+    ended_at: datetime
+    participant_count: int
     entries: list[ScoreboardEntryResponse]
     winner_ids: list[uuid.UUID]

@@ -24,8 +24,8 @@ export function RegisterPage() {
     setError('')
     setSubmitting(true)
     try {
-      const user = await register(email, password, role)
-      navigate(user.role === 'organizer' ? '/dashboard' : '/join')
+      await register(email, password, role)
+      navigate('/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {

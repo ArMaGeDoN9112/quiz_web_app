@@ -19,8 +19,8 @@ export function LoginPage() {
     setError('')
     setSubmitting(true)
     try {
-      const user = await login(email, password)
-      navigate(user.role === 'organizer' ? '/dashboard' : '/join')
+      await login(email, password)
+      navigate('/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
     } finally {
@@ -35,7 +35,7 @@ export function LoginPage() {
         <GlassPanel glow="violet" className="w-full">
           <h1 className="font-display text-2xl text-foreground">Sign in</h1>
           <p className="mt-2 font-body text-sm text-muted">
-            Access your organizer dashboard or participant room.
+            Access your personal quiz dashboard.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">

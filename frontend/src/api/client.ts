@@ -1,10 +1,17 @@
 import type {
   ApiValidationIssue,
   Question,
+  CurrentQuestion,
+  QuestionAnswer,
   QuestionCreateRequest,
+  QuestionEvent,
+  OrganizerSessionHistory,
+  PlaybackMode,
+  ParticipantSessionHistory,
   Quiz,
   Session,
   SessionParticipant,
+  SessionResult,
   SessionScoreboard,
   TokenResponse,
   User,
@@ -104,6 +111,13 @@ class ApiClient {
     })
   }
 
+  updateQuizPlaybackMode(quizId: string, playbackMode: PlaybackMode) {
+    return this.request<Quiz>(`/quizzes/${quizId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings: { playback_mode: playbackMode } }),
+    })
+  }
+
   deleteQuiz(quizId: string) {
     return this.request<void>(`/quizzes/${quizId}`, { method: 'DELETE' })
   }
@@ -119,6 +133,13 @@ class ApiClient {
     })
   }
 
+  updateQuestion(quizId: string, questionId: string, question: QuestionCreateRequest) {
+    return this.request<Question>(`/quizzes/${quizId}/questions/${questionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(question),
+    })
+  }
+
   launchSession(quizId: string) {
     return this.request<Session>('/sessions', {
       method: 'POST',
@@ -126,10 +147,26 @@ class ApiClient {
     })
   }
 
-  joinSession(roomCode: string, displayName: string) {
+  updateProfile(displayName: string) {
+    return this.request<User>('/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ display_name: displayName }),
+    })
+  }
+
+  joinSession(roomCode: string) {
     return this.request<SessionParticipant>('/sessions/join', {
       method: 'POST',
-      body: JSON.stringify({ room_code: roomCode, display_name: displayName }),
+      body: JSON.stringify({ room_code: roomCode }),
+    })
+  }
+
+  startQuestion(sessionId: string, questionId: string, durationSeconds?: number) {
+    const body: { question_id: string; duration_seconds?: number } = { question_id: questionId }
+    if (durationSeconds !== undefined) body.duration_seconds = durationSeconds
+    return this.request<QuestionEvent>(`/sessions/${sessionId}/questions/current`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     })
   }
 
@@ -137,8 +174,34 @@ class ApiClient {
     return this.request<SessionScoreboard>(`/sessions/${sessionId}/scoreboard`)
   }
 
-  endSession(sessionId: string) {
-    return this.request<SessionScoreboard>(`/sessions/${sessionId}/end`, { method: 'POST' })
+  getCurrentQuestion(sessionId: string) {
+    return this.request<CurrentQuestion>(`/sessions/${sessionId}/questions/current`)
+  }
+
+  submitAnswer(sessionId: string, questionId: string, selectedAnswerIds: string[]) {
+    return this.request<QuestionAnswer>(`/sessions/${sessionId}/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ question_id: questionId, selected_answer_ids: selectedAnswerIds }),
+    })
+  }
+
+  endSession(sessionId: string, keepalive = false) {
+    return this.request<SessionScoreboard>(`/sessions/${sessionId}/end`, {
+      method: 'POST',
+      keepalive,
+    })
+  }
+
+  getParticipantSessionHistory() {
+    return this.request<ParticipantSessionHistory[]>('/sessions/history/participated')
+  }
+
+  getOrganizerSessionHistory() {
+    return this.request<OrganizerSessionHistory[]>('/sessions/history/conducted')
+  }
+
+  getSessionResult(sessionId: string) {
+    return this.request<SessionResult>(`/sessions/${sessionId}/result`)
   }
 }
 

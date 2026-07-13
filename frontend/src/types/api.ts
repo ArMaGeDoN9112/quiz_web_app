@@ -4,9 +4,12 @@ export type QuizStatus = 'draft' | 'published' | 'archived'
 
 export type SessionStatus = 'waiting' | 'active' | 'ended'
 
+export type PlaybackMode = 'manual' | 'automatic'
+
 export interface User {
   id: string
   email: string
+  display_name: string | null
   role: UserRole
   created_at: string
   updated_at: string
@@ -23,6 +26,7 @@ export interface QuizSettings {
   shuffle_answers: boolean
   show_correct_answers: boolean
   scoring_mode: 'standard' | 'speed_bonus'
+  playback_mode: PlaybackMode
 }
 
 export interface Quiz {
@@ -55,6 +59,7 @@ export interface Question {
   text: string
   image_url: string | null
   points: number
+  duration_seconds: number
   position: number
   answers: Answer[]
 }
@@ -70,6 +75,7 @@ export interface QuestionCreateRequest {
   text: string
   image_url: string | null
   points: number
+  duration_seconds: number
   answers: AnswerCreateRequest[]
 }
 
@@ -98,6 +104,43 @@ export interface SessionParticipant {
   joined_at: string
 }
 
+export interface QuestionEvent {
+  id: string
+  session_id: string
+  question_id: string
+  status: 'scheduled' | 'active' | 'closed'
+  started_at: string | null
+  ended_at: string | null
+}
+
+export interface CurrentQuestionAnswer {
+  id: string
+  text: string
+  position: number
+}
+
+export interface CurrentQuestion {
+  event_id: string
+  session_id: string
+  question_id: string
+  type: QuestionType
+  choice_mode: ChoiceMode
+  text: string
+  image_url: string | null
+  ends_at: string | null
+  answers: CurrentQuestionAnswer[]
+}
+
+export interface QuestionAnswer {
+  id: string
+  participant_id: string
+  question_event_id: string
+  selected_answer_ids: string[]
+  text_answer: string | null
+  awarded_points: number
+  submitted_at: string
+}
+
 export interface ScoreboardEntry {
   participant_id: string
   display_name: string
@@ -108,6 +151,36 @@ export interface ScoreboardEntry {
 export interface SessionScoreboard {
   session_id: string
   status: SessionStatus
+  entries: ScoreboardEntry[]
+  winner_ids: string[]
+}
+
+export interface ParticipantSessionHistory {
+  session_id: string
+  quiz_id: string
+  quiz_title: string
+  ended_at: string
+  score: number
+  rank: number
+  participant_count: number
+}
+
+export interface OrganizerSessionHistory {
+  session_id: string
+  quiz_id: string
+  quiz_title: string
+  ended_at: string
+  participant_count: number
+  winner_names: string[]
+}
+
+export interface SessionResult {
+  session_id: string
+  quiz_id: string
+  quiz_title: string
+  organizer_id: string
+  ended_at: string
+  participant_count: number
   entries: ScoreboardEntry[]
   winner_ids: string[]
 }

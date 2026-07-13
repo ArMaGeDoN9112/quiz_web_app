@@ -15,6 +15,7 @@ from app.schemas.quiz import (
 )
 from app.services.quiz import (
     QuestionPositionConflictError,
+    QuestionNotFoundError,
     QuizNotFoundError,
     create_question,
     create_quiz,
@@ -23,6 +24,7 @@ from app.services.quiz import (
     list_questions,
     list_quizzes,
     update_quiz,
+    update_question,
 )
 
 router = APIRouter(prefix="/quizzes", tags=["quizzes"])
@@ -118,6 +120,32 @@ async def create_question_endpoint(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Question position conflict; retry request",
+        ) from error
+    return QuestionResponse.model_validate(question)
+
+
+@router.put(
+    "/{quiz_id}/questions/{question_id}",
+    response_model=QuestionResponse,
+)
+async def update_question_endpoint(
+    quiz_id: UUID,
+    question_id: UUID,
+    request: QuestionCreateRequest,
+    current_user: User = Depends(require_organizer),
+    session: AsyncSession = Depends(get_db_session),
+) -> QuestionResponse:
+    try:
+        question = await update_question(session, current_user, quiz_id, question_id, request)
+    except QuizNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        ) from error
+    except QuestionNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from error
     return QuestionResponse.model_validate(question)
 

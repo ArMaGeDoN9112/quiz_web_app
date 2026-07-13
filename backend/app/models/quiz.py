@@ -143,6 +143,9 @@ class Question(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     points: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    duration_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
     quiz: Mapped[Quiz] = relationship(back_populates="questions")

@@ -93,6 +93,7 @@ This plan tracks the remaining product work as small, verifiable slices. Each ph
 - [x] Display backend validation errors next to the relevant fields.
 - [x] Add frontend tests or component-level checks for question form validation and submit payloads.
 - [x] Document the organizer question authoring flow in frontend or product docs.
+- [x] Let organizers choose manual or automatic quiz playback and set a duration for every question.
 
 Acceptance:
 
@@ -139,13 +140,13 @@ Verification:
 
 ### Phase 6: Personal Accounts
 
-- [ ] Add participant quiz history API.
-- [ ] Add organizer conducted quiz history API.
-- [ ] Add session result detail API.
-- [ ] Add dashboard sections for participant history and organizer history.
-- [ ] Add session result detail page with scores, ranks, winners, dates, and participant count.
-- [ ] Add authorization tests so users can only see their own histories or sessions they organized.
-- [ ] Update `docs/api-contract.md` with history and result endpoints.
+- [x] Add participant quiz history API.
+- [x] Add organizer conducted quiz history API.
+- [x] Add session result detail API.
+- [x] Add dashboard sections for participant history and organizer history.
+- [x] Add session result detail page with scores, ranks, winners, dates, and participant count.
+- [x] Add authorization tests so users can only see their own histories or sessions they organized.
+- [x] Update `docs/api-contract.md` with history and result endpoints.
 
 Acceptance:
 

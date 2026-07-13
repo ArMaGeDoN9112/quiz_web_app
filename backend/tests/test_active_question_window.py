@@ -196,6 +196,27 @@ def test_start_question_sets_active_window_with_deterministic_time() -> None:
     assert fake_session.committed is True
 
 
+def test_start_question_without_duration_stays_open_for_manual_mode() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    quiz_session = _quiz_session(organizer.id)
+    question = _question(quiz_session.quiz_id)
+    now = datetime(2026, 7, 7, 12, 0, tzinfo=UTC)
+    fake_session = FakeSession(results=[quiz_session, question, None])
+
+    event = asyncio.run(
+        start_question(
+            fake_session,
+            organizer,
+            quiz_session.id,
+            question.id,
+            now_factory=lambda: now,
+        )
+    )
+
+    assert event.started_at == now
+    assert event.ended_at is None
+
+
 def test_start_question_closes_existing_active_question() -> None:
     organizer = _user("organizer@example.com", UserRole.ORGANIZER)
     quiz_session = _quiz_session(organizer.id, SessionStatus.ACTIVE)

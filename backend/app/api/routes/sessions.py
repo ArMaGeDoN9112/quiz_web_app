@@ -13,10 +13,14 @@ from app.models import QuizSession, SessionParticipant, User
 from app.schemas.session import (
     QuestionAnswerResponse,
     QuestionEventResponse,
+    CurrentQuestionResponse,
+    OrganizerSessionHistoryResponse,
+    ParticipantSessionHistoryResponse,
     SessionJoinRequest,
     SessionLaunchRequest,
     SessionParticipantResponse,
     SessionResponse,
+    SessionResultResponse,
     SessionScoreboardResponse,
     StartQuestionRequest,
     SubmitAnswerRequest,
@@ -30,9 +34,14 @@ from app.services.session import (
     DuplicateQuestionEventError,
     DuplicateQuestionResponseError,
     DuplicateSessionParticipantError,
+    CurrentQuestionAccessError,
+    CurrentQuestionNotFoundError,
     EndSessionNotFoundError,
+    SessionResultAccessError,
+    SessionResultNotFoundError,
     InvalidQuestionAnswerSelectionError,
     QuestionNotInSessionQuizError,
+    ProfileDisplayNameRequiredError,
     RoomCodeConflictError,
     SessionScoreboardAccessError,
     SessionScoreboardNotFoundError,
@@ -44,6 +53,10 @@ from app.services.session import (
     join_session,
     end_session,
     get_session_scoreboard,
+    get_current_question,
+    get_organizer_session_history,
+    get_participant_session_history,
+    get_session_result,
     launch_session,
     start_question,
     submit_answer,
@@ -51,6 +64,48 @@ from app.services.session import (
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 websocket_router = APIRouter(tags=["sessions"])
+
+
+@router.get(
+    "/history/participated",
+    response_model=list[ParticipantSessionHistoryResponse],
+)
+async def participant_history_endpoint(
+    current_user: User = Depends(require_participant),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ParticipantSessionHistoryResponse]:
+    history = await get_participant_session_history(session, current_user)
+    return [ParticipantSessionHistoryResponse.model_validate(item) for item in history]
+
+
+@router.get(
+    "/history/conducted",
+    response_model=list[OrganizerSessionHistoryResponse],
+)
+async def organizer_history_endpoint(
+    current_user: User = Depends(require_organizer),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[OrganizerSessionHistoryResponse]:
+    history = await get_organizer_session_history(session, current_user)
+    return [OrganizerSessionHistoryResponse.model_validate(item) for item in history]
+
+
+@router.get("/{session_id}/result", response_model=SessionResultResponse)
+async def session_result_endpoint(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> SessionResultResponse:
+    try:
+        result = await get_session_result(session, current_user, session_id)
+    except SessionResultNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session result not found") from error
+    except SessionResultAccessError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session result access denied",
+        ) from error
+    return SessionResultResponse.model_validate(result)
 
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -90,7 +145,6 @@ async def join_session_endpoint(
             session,
             current_user,
             request.room_code,
-            request.display_name,
         )
     except SessionNotJoinableError as error:
         raise HTTPException(
@@ -101,6 +155,11 @@ async def join_session_endpoint(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User already joined session",
+        ) from error
+    except ProfileDisplayNameRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile display name required",
         ) from error
 
     return SessionParticipantResponse.model_validate(participant)
@@ -156,6 +215,27 @@ async def start_question_endpoint(
         ) from error
 
     return QuestionEventResponse.model_validate(question_event)
+
+
+@router.get("/{session_id}/questions/current", response_model=CurrentQuestionResponse)
+async def get_current_question_endpoint(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> CurrentQuestionResponse:
+    try:
+        question = await get_current_question(session, current_user, session_id)
+    except CurrentQuestionNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active question",
+        ) from error
+    except CurrentQuestionAccessError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session access denied",
+        ) from error
+    return CurrentQuestionResponse.model_validate(question)
 
 
 @router.post(

@@ -12,12 +12,14 @@ def test_user_model_matches_auth_database_contract() -> None:
     assert set(table.c.keys()) == {
         "id",
         "email",
+        "display_name",
         "password_hash",
         "role",
         "created_at",
         "updated_at",
     }
     assert table.c.email.nullable is False
+    assert table.c.display_name.nullable is True
     assert table.c.password_hash.nullable is False
     assert table.c.role.nullable is False
 

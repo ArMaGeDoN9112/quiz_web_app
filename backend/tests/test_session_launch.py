@@ -18,6 +18,7 @@ DEFAULT_SETTINGS = {
     "shuffle_answers": False,
     "show_correct_answers": True,
     "scoring_mode": "standard",
+    "playback_mode": "manual",
 }
 
 

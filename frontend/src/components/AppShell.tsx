@@ -28,14 +28,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     {user.role}
                   </span>
                 </span>
-                {user.role === 'organizer' && (
-                  <Link
-                    to="/dashboard"
-                    className="font-body text-sm text-muted transition hover:text-aurora"
-                  >
-                    Dashboard
-                  </Link>
-                )}
+                <Link
+                  to="/dashboard"
+                  className="font-body text-sm text-muted transition hover:text-aurora"
+                >
+                  Dashboard
+                </Link>
                 {user.role === 'participant' && (
                   <Link
                     to="/join"

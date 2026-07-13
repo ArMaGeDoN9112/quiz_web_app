@@ -24,6 +24,10 @@ class QuestionPositionConflictError(Exception):
     pass
 
 
+class QuestionNotFoundError(Exception):
+    pass
+
+
 class QuizService:
     def __init__(self, session: AsyncSession, owner: User) -> None:
         self.session = session
@@ -94,6 +98,7 @@ class QuizService:
             text=data.text,
             image_url=data.image_url,
             points=data.points,
+            duration_seconds=data.duration_seconds,
             position=position,
             answers=[
                 Answer(
@@ -110,7 +115,7 @@ class QuizService:
         except IntegrityError as error:
             await self.session.rollback()
             raise QuestionPositionConflictError from error
-        await self.session.refresh(question)
+        await self.session.refresh(question, attribute_names=["answers"])
         return question
 
     async def list_questions(self, quiz_id: UUID) -> list[Question]:
@@ -122,6 +127,40 @@ class QuizService:
             .order_by(Question.position)
         )
         return list(result.scalars().all())
+
+    async def update_question(
+        self,
+        quiz_id: UUID,
+        question_id: UUID,
+        data: QuestionCreateRequest,
+    ) -> Question:
+        await self.get(quiz_id)
+        result = await self.session.execute(
+            select(Question)
+            .where(Question.id == question_id, Question.quiz_id == quiz_id)
+            .options(selectinload(Question.answers))
+        )
+        question = result.scalar_one_or_none()
+        if question is None:
+            raise QuestionNotFoundError
+
+        question.type = data.type
+        question.choice_mode = data.choice_mode
+        question.text = data.text
+        question.image_url = data.image_url
+        question.points = data.points
+        question.duration_seconds = data.duration_seconds
+        question.answers = [
+            Answer(
+                text=answer.text,
+                is_correct=answer.is_correct,
+                position=index,
+            )
+            for index, answer in enumerate(data.answers, start=1)
+        ]
+        await self.session.commit()
+        await self.session.refresh(question, attribute_names=["answers"])
+        return question
 
     async def _next_question_position(self, quiz_id: UUID) -> int:
         result = await self.session.execute(
@@ -177,6 +216,16 @@ async def create_question(
     data: QuestionCreateRequest,
 ) -> Question:
     return await QuizService(session, owner).create_question(quiz_id, data)
+
+
+async def update_question(
+    session: AsyncSession,
+    owner: User,
+    quiz_id: UUID,
+    question_id: UUID,
+    data: QuestionCreateRequest,
+) -> Question:
+    return await QuizService(session, owner).update_question(quiz_id, question_id, data)
 
 
 async def list_questions(session: AsyncSession, owner: User, quiz_id: UUID) -> list[Question]:

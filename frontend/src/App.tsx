@@ -10,6 +10,7 @@ import { LoginPage } from './pages/LoginPage'
 import { ParticipantRoomPage } from './pages/ParticipantRoomPage'
 import { QuizEditorPage } from './pages/QuizEditorPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { SessionResultPage } from './pages/SessionResultPage'
 
 function NotFoundPage() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/join" element={<JoinPage />} />
           <Route path="/host/:sessionId" element={<HostSessionPage />} />
           <Route path="/room/:sessionId" element={<ParticipantRoomPage />} />
+          <Route path="/sessions/:sessionId/result" element={<SessionResultPage />} />
           <Route path="/home" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

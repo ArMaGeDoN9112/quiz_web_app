@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     Answer,
@@ -42,6 +43,10 @@ class SessionNotJoinableError(Exception):
 
 
 class DuplicateSessionParticipantError(Exception):
+    pass
+
+
+class ProfileDisplayNameRequiredError(Exception):
     pass
 
 
@@ -101,7 +106,23 @@ class SessionScoreboardAccessError(Exception):
     pass
 
 
+class CurrentQuestionNotFoundError(Exception):
+    pass
+
+
+class CurrentQuestionAccessError(Exception):
+    pass
+
+
 class EndSessionNotFoundError(Exception):
+    pass
+
+
+class SessionResultNotFoundError(Exception):
+    pass
+
+
+class SessionResultAccessError(Exception):
     pass
 
 
@@ -111,6 +132,131 @@ class SessionScoreboard:
     status: SessionStatus
     entries: list[dict[str, object]]
     winner_ids: list[UUID]
+
+
+def _final_result_entries(quiz_session: QuizSession) -> list[dict[str, object]]:
+    final_results = quiz_session.final_results or {}
+    entries = final_results.get("entries", [])
+    return entries if isinstance(entries, list) else []
+
+
+def _final_winner_ids(quiz_session: QuizSession) -> list[str]:
+    final_results = quiz_session.final_results or {}
+    winner_ids = final_results.get("winner_ids", [])
+    return winner_ids if isinstance(winner_ids, list) else []
+
+
+async def get_participant_session_history(
+    session: AsyncSession,
+    participant: User,
+) -> list[dict[str, object]]:
+    result = await session.execute(
+        select(SessionParticipant, QuizSession, Quiz)
+        .join(QuizSession, SessionParticipant.session_id == QuizSession.id)
+        .join(Quiz, QuizSession.quiz_id == Quiz.id)
+        .where(
+            SessionParticipant.user_id == participant.id,
+            QuizSession.status == SessionStatus.ENDED,
+        )
+        .order_by(QuizSession.ended_at.desc(), QuizSession.id)
+    )
+    history: list[dict[str, object]] = []
+    for session_participant, quiz_session, quiz in result.all():
+        entries = _final_result_entries(quiz_session)
+        entry = next(
+            (item for item in entries if item.get("participant_id") == str(session_participant.id)),
+            None,
+        )
+        if entry is None or quiz_session.ended_at is None:
+            continue
+        history.append(
+            {
+                "session_id": quiz_session.id,
+                "quiz_id": quiz.id,
+                "quiz_title": quiz.title,
+                "ended_at": quiz_session.ended_at,
+                "score": entry["score"],
+                "rank": entry["rank"],
+                "participant_count": len(entries),
+            }
+        )
+    return history
+
+
+async def get_organizer_session_history(
+    session: AsyncSession,
+    organizer: User,
+) -> list[dict[str, object]]:
+    result = await session.execute(
+        select(QuizSession, Quiz)
+        .join(Quiz, QuizSession.quiz_id == Quiz.id)
+        .where(
+            QuizSession.organizer_id == organizer.id,
+            QuizSession.status == SessionStatus.ENDED,
+        )
+        .order_by(QuizSession.ended_at.desc(), QuizSession.id)
+    )
+    history: list[dict[str, object]] = []
+    for quiz_session, quiz in result.all():
+        entries = _final_result_entries(quiz_session)
+        winner_ids = set(_final_winner_ids(quiz_session))
+        if quiz_session.ended_at is None:
+            continue
+        history.append(
+            {
+                "session_id": quiz_session.id,
+                "quiz_id": quiz.id,
+                "quiz_title": quiz.title,
+                "ended_at": quiz_session.ended_at,
+                "participant_count": len(entries),
+                "winner_names": [
+                    str(entry["display_name"])
+                    for entry in entries
+                    if entry.get("participant_id") in winner_ids
+                ],
+            }
+        )
+    return history
+
+
+async def get_session_result(
+    session: AsyncSession,
+    current_user: User,
+    session_id: UUID,
+) -> dict[str, object]:
+    result = await session.execute(
+        select(QuizSession, Quiz)
+        .join(Quiz, QuizSession.quiz_id == Quiz.id)
+        .where(QuizSession.id == session_id, QuizSession.status == SessionStatus.ENDED)
+    )
+    row = result.all()
+    if not row:
+        raise SessionResultNotFoundError
+    quiz_session, quiz = row[0]
+
+    if current_user.id != quiz_session.organizer_id:
+        participant_result = await session.execute(
+            select(SessionParticipant).where(
+                SessionParticipant.session_id == quiz_session.id,
+                SessionParticipant.user_id == current_user.id,
+            )
+        )
+        if participant_result.scalar_one_or_none() is None:
+            raise SessionResultAccessError
+
+    entries = _final_result_entries(quiz_session)
+    if quiz_session.ended_at is None:
+        raise SessionResultNotFoundError
+    return {
+        "session_id": quiz_session.id,
+        "quiz_id": quiz.id,
+        "quiz_title": quiz.title,
+        "organizer_id": quiz_session.organizer_id,
+        "ended_at": quiz_session.ended_at,
+        "participant_count": len(entries),
+        "entries": entries,
+        "winner_ids": _final_winner_ids(quiz_session),
+    }
 
 
 def _integrity_constraint_name(error: IntegrityError) -> str | None:
@@ -177,8 +323,10 @@ async def join_session(
     session: AsyncSession,
     participant: User,
     room_code: str,
-    display_name: str,
 ) -> SessionParticipant:
+    if participant.display_name is None:
+        raise ProfileDisplayNameRequiredError
+
     result = await session.execute(
         select(QuizSession).where(QuizSession.room_code == room_code)
     )
@@ -198,7 +346,7 @@ async def join_session(
     session_participant = SessionParticipant(
         session_id=quiz_session.id,
         user_id=participant.id,
-        display_name=display_name,
+        display_name=participant.display_name,
     )
     session.add(session_participant)
 
@@ -257,16 +405,16 @@ async def start_question(
         active_event.ended_at = now
         await session.flush()
 
-    window_seconds = duration_seconds
-    if window_seconds is None:
-        window_seconds = 30
-
     question_event = QuestionEvent(
         session_id=quiz_session.id,
         question_id=question.id,
         status=QuestionEventStatus.ACTIVE,
         started_at=now,
-        ended_at=now + timedelta(seconds=window_seconds),
+        ended_at=(
+            now + timedelta(seconds=duration_seconds)
+            if duration_seconds is not None
+            else None
+        ),
     )
     quiz_session.status = SessionStatus.ACTIVE
     session.add(question_event)
@@ -324,9 +472,11 @@ async def submit_answer(
     now = now_factory()
     if (
         question_event.started_at is None
-        or question_event.ended_at is None
         or now < question_event.started_at
-        or now > question_event.ended_at
+        or (
+            question_event.ended_at is not None
+            and now > question_event.ended_at
+        )
     ):
         raise AnswerOutsideQuestionWindowError
 
@@ -385,6 +535,61 @@ async def submit_answer(
 
     await session.refresh(response)
     return response
+
+
+async def get_current_question(
+    session: AsyncSession,
+    current_user: User,
+    session_id: UUID,
+) -> dict[str, object]:
+    session_result = await session.execute(select(QuizSession).where(QuizSession.id == session_id))
+    quiz_session = session_result.scalar_one_or_none()
+    if quiz_session is None:
+        raise CurrentQuestionNotFoundError
+
+    if current_user.id != quiz_session.organizer_id:
+        participant_result = await session.execute(
+            select(SessionParticipant).where(
+                SessionParticipant.session_id == session_id,
+                SessionParticipant.user_id == current_user.id,
+            )
+        )
+        if participant_result.scalar_one_or_none() is None:
+            raise CurrentQuestionAccessError
+
+    event_result = await session.execute(
+        select(QuestionEvent).where(
+            QuestionEvent.session_id == session_id,
+            QuestionEvent.status == QuestionEventStatus.ACTIVE,
+        )
+    )
+    question_event = event_result.scalar_one_or_none()
+    if question_event is None:
+        raise CurrentQuestionNotFoundError
+
+    question_result = await session.execute(
+        select(Question)
+        .where(Question.id == question_event.question_id)
+        .options(selectinload(Question.answers))
+    )
+    question = question_result.scalar_one_or_none()
+    if question is None:
+        raise CurrentQuestionNotFoundError
+
+    return {
+        "event_id": question_event.id,
+        "session_id": quiz_session.id,
+        "question_id": question.id,
+        "type": question.type,
+        "choice_mode": question.choice_mode,
+        "text": question.text,
+        "image_url": question.image_url,
+        "ends_at": question_event.ended_at,
+        "answers": [
+            {"id": answer.id, "text": answer.text, "position": answer.position}
+            for answer in question.answers
+        ],
+    }
 
 
 async def get_session_scoreboard(

@@ -71,6 +71,7 @@ def test_question_table_constrains_type_and_choice_mode() -> None:
         "text",
         "image_url",
         "points",
+        "duration_seconds",
         "position",
     }
     assert QuestionType.__members__.keys() == {"TEXT", "IMAGE"}
@@ -80,6 +81,7 @@ def test_question_table_constrains_type_and_choice_mode() -> None:
     assert table.c.quiz_id.nullable is False
     assert table.c.category_id.nullable is True
     assert table.c.points.nullable is False
+    assert table.c.duration_seconds.nullable is False
     assert table.c.position.nullable is False
     assert ("quiz_id", "position") in unique_columns
 

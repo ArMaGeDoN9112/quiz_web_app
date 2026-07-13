@@ -13,6 +13,7 @@ const baseDraft: QuestionDraft = {
   text: '  Capital of France?  ',
   imageUrl: '',
   points: '2',
+  durationSeconds: '45',
   answers: [
     { id: 'a', text: '  Paris  ', isCorrect: true },
     { id: 'b', text: 'Rome', isCorrect: false },
@@ -26,6 +27,7 @@ assert.deepEqual(buildQuestionPayload(baseDraft), {
   text: 'Capital of France?',
   image_url: null,
   points: 2,
+  duration_seconds: 45,
   answers: [
     { text: 'Paris', is_correct: true },
     { text: 'Rome', is_correct: false },
@@ -80,10 +82,16 @@ assert.deepEqual(
     text: 'Capital of France?',
     image_url: 'https://example.com/cells.png',
     points: 2,
+    duration_seconds: 45,
     answers: [
       { text: 'Cell wall', is_correct: true },
       { text: 'Nucleus', is_correct: true },
       { text: 'Asteroid', is_correct: false },
     ],
   },
+)
+
+assert.equal(
+  validateQuestionDraft({ ...baseDraft, durationSeconds: '4' }).durationSeconds,
+  'Duration must be an integer from 5 to 3600 seconds.',
 )
