@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import Answer, Question, Quiz, QuizStatus, User
 from app.schemas.quiz import (
@@ -110,6 +113,16 @@ class QuizService:
         await self.session.refresh(question)
         return question
 
+    async def list_questions(self, quiz_id: UUID) -> list[Question]:
+        await self.get(quiz_id)
+        result = await self.session.execute(
+            select(Question)
+            .where(Question.quiz_id == quiz_id)
+            .options(selectinload(Question.answers))
+            .order_by(Question.position)
+        )
+        return list(result.scalars().all())
+
     async def _next_question_position(self, quiz_id: UUID) -> int:
         result = await self.session.execute(
             select(func.coalesce(func.max(Question.position), 0)).where(
@@ -164,3 +177,7 @@ async def create_question(
     data: QuestionCreateRequest,
 ) -> Question:
     return await QuizService(session, owner).create_question(quiz_id, data)
+
+
+async def list_questions(session: AsyncSession, owner: User, quiz_id: UUID) -> list[Question]:
+    return await QuizService(session, owner).list_questions(quiz_id)

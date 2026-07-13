@@ -36,6 +36,49 @@ export interface Quiz {
   updated_at: string
 }
 
+export type QuestionType = 'text' | 'image'
+
+export type ChoiceMode = 'single' | 'multiple'
+
+export interface Answer {
+  id: string
+  text: string
+  is_correct: boolean
+  position: number
+}
+
+export interface Question {
+  id: string
+  quiz_id: string
+  type: QuestionType
+  choice_mode: ChoiceMode
+  text: string
+  image_url: string | null
+  points: number
+  position: number
+  answers: Answer[]
+}
+
+export interface AnswerCreateRequest {
+  text: string
+  is_correct: boolean
+}
+
+export interface QuestionCreateRequest {
+  type: QuestionType
+  choice_mode: ChoiceMode
+  text: string
+  image_url: string | null
+  points: number
+  answers: AnswerCreateRequest[]
+}
+
+export interface ApiValidationIssue {
+  loc?: (string | number)[]
+  msg: string
+  type?: string
+}
+
 export interface Session {
   id: string
   quiz_id: string
@@ -56,5 +99,5 @@ export interface SessionParticipant {
 }
 
 export interface ApiError {
-  detail: string | { msg: string; type: string }[]
+  detail: string | ApiValidationIssue[]
 }

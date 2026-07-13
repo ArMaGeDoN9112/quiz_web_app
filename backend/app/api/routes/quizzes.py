@@ -20,6 +20,7 @@ from app.services.quiz import (
     create_quiz,
     delete_quiz,
     get_quiz,
+    list_questions,
     list_quizzes,
     update_quiz,
 )
@@ -119,3 +120,19 @@ async def create_question_endpoint(
             detail="Question position conflict; retry request",
         ) from error
     return QuestionResponse.model_validate(question)
+
+
+@router.get("/{quiz_id}/questions", response_model=list[QuestionResponse])
+async def list_questions_endpoint(
+    quiz_id: UUID,
+    current_user: User = Depends(require_organizer),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[QuestionResponse]:
+    try:
+        questions = await list_questions(session, current_user, quiz_id)
+    except QuizNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found",
+        ) from error
+    return [QuestionResponse.model_validate(question) for question in questions]

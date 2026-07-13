@@ -9,8 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
-from app.models import Question, Quiz, QuizStatus, User, UserRole
-from app.services.quiz import list_quizzes
+from app.models import Answer, ChoiceMode, Question, QuestionType, Quiz, QuizStatus, User, UserRole
+from app.services.quiz import list_questions, list_quizzes
 
 
 DEFAULT_SETTINGS = {
@@ -124,6 +124,26 @@ def _quiz(owner_id: UUID, title: str = "Science Bowl") -> Quiz:
     return quiz
 
 
+def _question(quiz_id: UUID, position: int = 1) -> Question:
+    question = Question(
+        quiz_id=quiz_id,
+        type=QuestionType.TEXT,
+        choice_mode=ChoiceMode.SINGLE,
+        text="Capital of France?",
+        image_url=None,
+        points=1,
+        position=position,
+        answers=[
+            Answer(text="Paris", is_correct=True, position=1),
+            Answer(text="Rome", is_correct=False, position=2),
+        ],
+    )
+    question.id = uuid4()
+    for answer in question.answers:
+        answer.id = uuid4()
+    return question
+
+
 def _client_with_session(fake_session: FakeSession) -> TestClient:
     app = create_app()
 
@@ -234,6 +254,79 @@ def test_non_owner_cannot_get_quiz() -> None:
         "id_1": quiz_id,
         "owner_id_1": organizer.id,
     }
+
+
+def test_organizer_lists_questions_for_own_quiz() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    question = _question(quiz.id)
+    fake_session = FakeSession(results=[organizer, quiz, [question]])
+    client = _client_with_session(fake_session)
+
+    response = client.get(f"/quizzes/{quiz.id}/questions", headers=_auth_header(organizer))
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": str(question.id),
+            "quiz_id": str(quiz.id),
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "image_url": None,
+            "points": 1,
+            "position": 1,
+            "answers": [
+                {
+                    "id": str(question.answers[0].id),
+                    "text": "Paris",
+                    "is_correct": True,
+                    "position": 1,
+                },
+                {
+                    "id": str(question.answers[1].id),
+                    "text": "Rome",
+                    "is_correct": False,
+                    "position": 2,
+                },
+            ],
+        }
+    ]
+    assert fake_session.statements[1].compile().params == {
+        "id_1": quiz.id,
+        "owner_id_1": organizer.id,
+    }
+    assert fake_session.statements[2].compile().params == {"quiz_id_1": quiz.id}
+
+
+def test_list_questions_service_returns_owner_quiz_questions_in_query_order() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    first_question = _question(quiz.id, position=1)
+    second_question = _question(quiz.id, position=2)
+    fake_session = FakeSession(results=[quiz, [first_question, second_question]])
+
+    questions = asyncio.run(list_questions(fake_session, organizer, quiz.id))
+
+    assert questions == [first_question, second_question]
+    assert fake_session.statements[0].compile().params == {
+        "id_1": quiz.id,
+        "owner_id_1": organizer.id,
+    }
+    assert fake_session.statements[1].compile().params == {"quiz_id_1": quiz.id}
+
+
+def test_non_owner_cannot_list_questions() -> None:
+    organizer = _user("organizer@example.com")
+    quiz_id = uuid4()
+    fake_session = FakeSession(results=[organizer, None])
+    client = _client_with_session(fake_session)
+
+    response = client.get(f"/quizzes/{quiz_id}/questions", headers=_auth_header(organizer))
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Quiz not found"}
+    assert len(fake_session.statements) == 2
 
 
 def test_organizer_updates_own_quiz() -> None:

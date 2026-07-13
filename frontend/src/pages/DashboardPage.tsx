@@ -151,6 +151,9 @@ export function DashboardPage() {
                         </p>
                       </div>
                       <div className="flex gap-2">
+                        <Link to={`/quizzes/${quiz.id}`} className="btn-ghost text-xs">
+                          Edit
+                        </Link>
                         <button
                           type="button"
                           onClick={() => handleLaunch(quiz.id)}
