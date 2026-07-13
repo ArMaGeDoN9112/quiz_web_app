@@ -7,6 +7,7 @@ import { ParticleField } from '../components/ParticleField'
 import { RoomCodeDisplay } from '../components/RoomCodeDisplay'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { hasSessionEnded } from '../features/sessionLifecycle'
 import type { PlaybackMode, Question, Session, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
@@ -36,7 +37,9 @@ export function HostSessionPage() {
     const loadScoreboard = async () => {
       try {
         const nextScoreboard = await api.getSessionScoreboard(session.id)
-        if (active) setScoreboard(nextScoreboard)
+        if (!active) return
+        setScoreboard(nextScoreboard)
+        if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
       } catch (error) {
         if (active) setScoreboardError(error instanceof Error ? error.message : 'Scoreboard unavailable')
       }
@@ -47,7 +50,7 @@ export function HostSessionPage() {
       active = false
       window.clearInterval(interval)
     }
-  }, [session])
+  }, [navigate, session])
 
   const endSessionForAll = useCallback((keepalive: boolean) => {
     if (!session || endRequestedRef.current) return
@@ -85,12 +88,14 @@ export function HostSessionPage() {
     endRequestedRef.current = true
     setAutomaticQuestionIndex(null)
     try {
-      setScoreboard(await api.endSession(session.id))
+      const finalScoreboard = await api.endSession(session.id)
+      setScoreboard(finalScoreboard)
       setScoreboardError('')
+      navigate('/', { replace: true })
     } catch (error) {
       setScoreboardError(error instanceof Error ? error.message : 'Could not end session')
     }
-  }, [session])
+  }, [navigate, session])
 
   const startManualQuestion = async () => {
     if (!session || !questionId) return

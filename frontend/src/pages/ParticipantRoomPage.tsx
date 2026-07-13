@@ -6,6 +6,7 @@ import { GlassPanel } from '../components/GlassPanel'
 import { ParticleField } from '../components/ParticleField'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { hasSessionEnded } from '../features/sessionLifecycle'
 import type { CurrentQuestion, SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function ParticipantRoomPage() {
@@ -31,7 +32,12 @@ export function ParticipantRoomPage() {
     const loadRoom = async () => {
       try {
         const nextScoreboard = await api.getSessionScoreboard(sessionId)
-        if (active) setScoreboard(nextScoreboard)
+        if (!active) return
+        setScoreboard(nextScoreboard)
+        if (hasSessionEnded(nextScoreboard)) {
+          navigate('/', { replace: true })
+          return
+        }
       } catch {
         // The room can still be loading while the join request settles.
       }
@@ -48,7 +54,7 @@ export function ParticipantRoomPage() {
       active = false
       window.clearInterval(interval)
     }
-  }, [sessionId])
+  }, [navigate, sessionId])
 
   useEffect(() => {
     setSelectedAnswerIds([])
