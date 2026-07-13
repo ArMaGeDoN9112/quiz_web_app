@@ -31,6 +31,7 @@ from app.services.session import (
     SessionQuestionNotFoundError,
     StartQuestionSessionNotFoundError,
     submit_answer,
+    end_session,
     start_question,
 )
 
@@ -316,6 +317,7 @@ def test_submit_answer_accepts_response_inside_active_window() -> None:
     assert response.participant_id == participant.id
     assert response.question_event_id == event.id
     assert response.selected_answer_ids == [str(answer_id)]
+    assert response.awarded_points == question.points
     assert fake_session.committed is True
 
 
@@ -507,6 +509,87 @@ def test_submit_answer_rejects_multiple_answers_for_single_choice() -> None:
         raise AssertionError("Expected InvalidQuestionAnswerSelectionError")
 
     assert fake_session.added == []
+
+
+def test_submit_answer_rejects_duplicate_selected_answer_id() -> None:
+    participant_user = _user("participant@example.com", UserRole.PARTICIPANT)
+    quiz_session = _quiz_session(uuid4(), SessionStatus.ACTIVE)
+    question = _question(quiz_session.quiz_id)
+    participant = _participant(quiz_session, participant_user)
+    event = _active_event(quiz_session, question)
+    answer = _answer(question)
+    fake_session = FakeSession(results=[quiz_session, participant, event, question, [answer]])
+
+    try:
+        asyncio.run(
+            submit_answer(
+                fake_session,
+                participant_user,
+                quiz_session.id,
+                question.id,
+                selected_answer_ids=[answer.id, answer.id],
+                text_answer=None,
+                now_factory=lambda: datetime(2026, 7, 7, 12, 0, 10, tzinfo=UTC),
+            )
+        )
+    except InvalidQuestionAnswerSelectionError:
+        pass
+    else:
+        raise AssertionError("Expected InvalidQuestionAnswerSelectionError")
+
+    assert fake_session.added == []
+
+
+def test_end_session_stores_final_rankings_and_winners() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    quiz_session = _quiz_session(organizer.id, SessionStatus.ACTIVE)
+    question = _question(quiz_session.quiz_id)
+    event = _active_event(quiz_session, question)
+    first_user = _user("ada@example.com", UserRole.PARTICIPANT)
+    second_user = _user("bert@example.com", UserRole.PARTICIPANT)
+    first_participant = _participant(quiz_session, first_user)
+    second_participant = _participant(quiz_session, second_user)
+    second_participant.display_name = "Bert"
+    first_response = QuestionResponse(
+        participant_id=first_participant.id,
+        question_event_id=event.id,
+        selected_answer_ids=[],
+        text_answer=None,
+        awarded_points=8,
+        meta={},
+    )
+    second_response = QuestionResponse(
+        participant_id=second_participant.id,
+        question_event_id=event.id,
+        selected_answer_ids=[],
+        text_answer=None,
+        awarded_points=4,
+        meta={},
+    )
+    fake_session = FakeSession(
+        results=[quiz_session, event, quiz_session, [first_participant, second_participant], [first_response, second_response]]
+    )
+
+    scoreboard = asyncio.run(
+        end_session(
+            fake_session,
+            organizer,
+            quiz_session.id,
+            now_factory=lambda: datetime(2026, 7, 7, 12, 1, tzinfo=UTC),
+        )
+    )
+
+    assert quiz_session.status is SessionStatus.ENDED
+    assert event.status is QuestionEventStatus.CLOSED
+    assert scoreboard.entries[0]["rank"] == 1
+    assert scoreboard.winner_ids == [first_participant.id]
+    assert quiz_session.final_results == {
+        "entries": [
+            {"participant_id": str(first_participant.id), "display_name": "Ada", "score": 8, "rank": 1},
+            {"participant_id": str(second_participant.id), "display_name": "Bert", "score": 4, "rank": 2},
+        ],
+        "winner_ids": [str(first_participant.id)],
+    }
 
 
 def test_submit_answer_rejects_ended_session() -> None:

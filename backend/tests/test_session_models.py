@@ -36,6 +36,7 @@ def test_sessions_table_matches_database_contract() -> None:
         "created_at",
         "updated_at",
         "ended_at",
+        "final_results",
     }
     assert SessionStatus.__members__.keys() == {"WAITING", "ACTIVE", "ENDED"}
     assert table.c.status.type.enums == ["waiting", "active", "ended"]
@@ -106,6 +107,7 @@ def test_question_responses_table_matches_database_contract() -> None:
         "question_event_id",
         "selected_answer_ids",
         "text_answer",
+        "awarded_points",
         "submitted_at",
         "meta",
     }
@@ -113,6 +115,7 @@ def test_question_responses_table_matches_database_contract() -> None:
     assert table.c.question_event_id.nullable is False
     assert table.c.selected_answer_ids.nullable is False
     assert table.c.text_answer.nullable is True
+    assert table.c.awarded_points.nullable is False
     assert table.c.meta.nullable is False
     assert ("participant_id", "question_event_id") in unique_columns
 

@@ -1,12 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { AppShell } from '../components/AppShell'
 import { GlassPanel } from '../components/GlassPanel'
 import { ParticleField } from '../components/ParticleField'
 import { RoomCodeDisplay } from '../components/RoomCodeDisplay'
+import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import type { Session } from '../types/api'
+import type { Session, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
   const { sessionId } = useParams()
@@ -14,12 +15,43 @@ export function HostSessionPage() {
   const navigate = useNavigate()
   const { user, loading } = useAuth()
   const session = (location.state as { session?: Session } | null)?.session
+  const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
+  const [scoreboardError, setScoreboardError] = useState('')
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) {
       navigate('/login')
     }
   }, [user, loading, navigate])
+
+  useEffect(() => {
+    if (!session) return
+    let active = true
+    const loadScoreboard = async () => {
+      try {
+        const nextScoreboard = await api.getSessionScoreboard(session.id)
+        if (active) setScoreboard(nextScoreboard)
+      } catch (error) {
+        if (active) setScoreboardError(error instanceof Error ? error.message : 'Scoreboard unavailable')
+      }
+    }
+    void loadScoreboard()
+    const interval = window.setInterval(loadScoreboard, 2000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [session])
+
+  const endSession = async () => {
+    if (!session) return
+    try {
+      setScoreboard(await api.endSession(session.id))
+      setScoreboardError('')
+    } catch (error) {
+      setScoreboardError(error instanceof Error ? error.message : 'Could not end session')
+    }
+  }
 
   if (loading || !user || !session) {
     return (
@@ -55,11 +87,28 @@ export function HostSessionPage() {
             <RoomCodeDisplay code={session.room_code} />
           </div>
 
-          <div className="rounded-xl border border-dashed border-white/15 bg-void/40 p-6">
-            <p className="font-body text-sm text-muted">
-              Question controls and scoreboard sync arrive in the next phase.
-              Participants can join now with the room code above.
-            </p>
+          <div className="rounded-xl border border-white/15 bg-void/40 p-6 text-left">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-display text-sm text-foreground">Live scoreboard</p>
+              {scoreboard?.status !== 'ended' && (
+                <button type="button" className="btn-ghost" onClick={endSession}>
+                  End session
+                </button>
+              )}
+            </div>
+            {scoreboardError && <p className="mt-3 font-body text-sm text-rose-300">{scoreboardError}</p>}
+            <ol className="mt-4 space-y-2">
+              {scoreboard?.entries.map((entry) => (
+                <li key={entry.participant_id} className="flex justify-between font-body text-sm text-muted">
+                  <span>#{entry.rank} {entry.display_name}</span>
+                  <span>{entry.score} pts</span>
+                </li>
+              ))}
+              {!scoreboard?.entries.length && <li className="font-body text-sm text-muted">No participants yet.</li>}
+            </ol>
+            {scoreboard?.status === 'ended' && (
+              <p className="mt-4 font-body text-sm text-aurora">Final results saved.</p>
+            )}
           </div>
 
           <Link to="/dashboard" className="btn-ghost mt-8 inline-block">

@@ -92,6 +92,21 @@ class QuestionAnswerResponse(BaseModel):
     question_event_id: uuid.UUID
     selected_answer_ids: list[str]
     text_answer: str | None
+    awarded_points: int
     submitted_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ScoreboardEntryResponse(BaseModel):
+    participant_id: uuid.UUID
+    display_name: str
+    score: int
+    rank: int
+
+
+class SessionScoreboardResponse(BaseModel):
+    session_id: uuid.UUID
+    status: SessionStatus
+    entries: list[ScoreboardEntryResponse]
+    winner_ids: list[uuid.UUID]

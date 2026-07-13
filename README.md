@@ -73,6 +73,7 @@ npm run build
 - `GET|POST|PATCH|DELETE /quizzes`
 - `POST /sessions`, `POST /sessions/join`
 - `POST /sessions/{id}/answer`
+- `GET /sessions/{id}/scoreboard`, `POST /sessions/{id}/end`
 
 ## Implementation Phase Plan
 
@@ -108,20 +109,20 @@ Verification:
 
 ### Phase 5: Scoring
 
-- [ ] Add deterministic scoring service for submitted answers.
-- [ ] Score single-choice questions.
-- [ ] Score multiple-choice questions.
-- [ ] Reject duplicate selected answer IDs in a single submission.
-- [ ] Persist awarded points on `question_responses`.
-- [ ] Return score impact from the answer submission endpoint where useful for the participant UI.
-- [ ] Add live scoreboard API for active sessions.
-- [ ] Broadcast scoreboard updates after accepted responses.
-- [ ] Show live scoreboard in organizer session view.
-- [ ] Show participant score/rank updates in participant room view.
-- [ ] Finalize session results when a session ends.
-- [ ] Detect final ranking and winner or winners.
-- [ ] Add tests for correct, incorrect, partial, duplicate, and repeated submissions.
-- [ ] Update `docs/api-contract.md` for scoring, scoreboard, and final result response shapes.
+- [x] Add deterministic scoring service for submitted answers.
+- [x] Score single-choice questions.
+- [x] Score multiple-choice questions.
+- [x] Reject duplicate selected answer IDs in a single submission.
+- [x] Persist awarded points on `question_responses`.
+- [x] Return score impact from the answer submission endpoint where useful for the participant UI.
+- [x] Add live scoreboard API for active sessions.
+- [x] Broadcast scoreboard updates after accepted responses.
+- [x] Show live scoreboard in organizer session view.
+- [x] Show participant score/rank updates in participant room view.
+- [x] Finalize session results when a session ends.
+- [x] Detect final ranking and winner or winners.
+- [x] Add tests for correct, incorrect, partial, duplicate, and repeated submissions.
+- [x] Update `docs/api-contract.md` for scoring, scoreboard, and final result response shapes.
 
 Acceptance:
 

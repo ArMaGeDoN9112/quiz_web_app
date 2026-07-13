@@ -1,11 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import require_organizer, require_participant
+from app.api.dependencies.auth import get_current_user, require_organizer, require_participant
+from app.core.live import scoreboard_hub
+from app.core.security import verify_access_token
+from app.db.session import AsyncSessionLocal
 from app.db.session import get_db_session
-from app.models import User
+from app.models import QuizSession, SessionParticipant, User
 from app.schemas.session import (
     QuestionAnswerResponse,
     QuestionEventResponse,
@@ -13,6 +17,7 @@ from app.schemas.session import (
     SessionLaunchRequest,
     SessionParticipantResponse,
     SessionResponse,
+    SessionScoreboardResponse,
     StartQuestionRequest,
     SubmitAnswerRequest,
 )
@@ -25,21 +30,27 @@ from app.services.session import (
     DuplicateQuestionEventError,
     DuplicateQuestionResponseError,
     DuplicateSessionParticipantError,
+    EndSessionNotFoundError,
     InvalidQuestionAnswerSelectionError,
     QuestionNotInSessionQuizError,
     RoomCodeConflictError,
+    SessionScoreboardAccessError,
+    SessionScoreboardNotFoundError,
     SessionQuestionNotFoundError,
     SessionNotJoinableError,
     SessionQuizNotFoundError,
     StartQuestionSessionEndedError,
     StartQuestionSessionNotFoundError,
     join_session,
+    end_session,
+    get_session_scoreboard,
     launch_session,
     start_question,
     submit_answer,
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+websocket_router = APIRouter(tags=["sessions"])
 
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -198,4 +209,98 @@ async def submit_answer_endpoint(
             detail="Question already answered",
         ) from error
 
-    return QuestionAnswerResponse.model_validate(response)
+    answer_response = QuestionAnswerResponse.model_validate(response)
+    scoreboard = await get_session_scoreboard(session, current_user, session_id)
+    scoreboard_response = _scoreboard_response(scoreboard)
+    await scoreboard_hub.broadcast(
+        session_id,
+        {"type": "scoreboard.updated", "scoreboard": scoreboard_response.model_dump(mode="json")},
+    )
+    return answer_response
+
+
+def _scoreboard_response(scoreboard: object) -> SessionScoreboardResponse:
+    return SessionScoreboardResponse.model_validate(scoreboard, from_attributes=True)
+
+
+@router.get("/{session_id}/scoreboard", response_model=SessionScoreboardResponse)
+async def get_scoreboard_endpoint(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> SessionScoreboardResponse:
+    try:
+        scoreboard = await get_session_scoreboard(session, current_user, session_id)
+    except SessionScoreboardNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
+    except SessionScoreboardAccessError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session access denied") from error
+    return _scoreboard_response(scoreboard)
+
+
+@router.post("/{session_id}/end", response_model=SessionScoreboardResponse)
+async def end_session_endpoint(
+    session_id: UUID,
+    current_user: User = Depends(require_organizer),
+    session: AsyncSession = Depends(get_db_session),
+) -> SessionScoreboardResponse:
+    try:
+        scoreboard = await end_session(session, current_user, session_id)
+    except EndSessionNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
+    response = _scoreboard_response(scoreboard)
+    await scoreboard_hub.broadcast(
+        session_id,
+        {"type": "scoreboard.updated", "scoreboard": response.model_dump(mode="json")},
+    )
+    return response
+
+
+@websocket_router.websocket("/ws/sessions/{room_code}")
+async def session_scoreboard_websocket(websocket: WebSocket, room_code: str) -> None:
+    token = websocket.query_params.get("token")
+    payload = verify_access_token(token) if token else None
+    if payload is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    try:
+        user_id = UUID(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    async with AsyncSessionLocal() as session:
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        quiz_session_result = await session.execute(
+            select(QuizSession).where(QuizSession.room_code == room_code.strip().upper())
+        )
+        quiz_session = quiz_session_result.scalar_one_or_none()
+        if user is None or quiz_session is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        if user.id != quiz_session.organizer_id:
+            participant_result = await session.execute(
+                select(SessionParticipant).where(
+                    SessionParticipant.session_id == quiz_session.id,
+                    SessionParticipant.user_id == user.id,
+                )
+            )
+            if participant_result.scalar_one_or_none() is None:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+
+        scoreboard = await get_session_scoreboard(session, user, quiz_session.id)
+        response = _scoreboard_response(scoreboard)
+
+    await scoreboard_hub.connect(quiz_session.id, websocket)
+    try:
+        await websocket.send_json(
+            {"type": "scoreboard.updated", "scoreboard": response.model_dump(mode="json")}
+        )
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        scoreboard_hub.disconnect(quiz_session.id, websocket)

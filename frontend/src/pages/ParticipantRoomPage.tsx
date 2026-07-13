@@ -1,11 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { AppShell } from '../components/AppShell'
 import { GlassPanel } from '../components/GlassPanel'
 import { ParticleField } from '../components/ParticleField'
+import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import type { SessionParticipant } from '../types/api'
+import type { SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function ParticipantRoomPage() {
   const { sessionId } = useParams()
@@ -14,12 +15,32 @@ export function ParticipantRoomPage() {
   const { user, loading } = useAuth()
   const participant = (location.state as { participant?: SessionParticipant } | null)
     ?.participant
+  const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/login')
     }
   }, [user, loading, navigate])
+
+  useEffect(() => {
+    if (!sessionId) return
+    let active = true
+    const loadScoreboard = async () => {
+      try {
+        const nextScoreboard = await api.getSessionScoreboard(sessionId)
+        if (active) setScoreboard(nextScoreboard)
+      } catch {
+        // The room can still be loading while the join request settles.
+      }
+    }
+    void loadScoreboard()
+    const interval = window.setInterval(loadScoreboard, 2000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [sessionId])
 
   if (loading || !user) {
     return (
@@ -52,9 +73,17 @@ export function ParticipantRoomPage() {
             </div>
           </div>
 
-          <p className="font-body text-sm text-muted">
-            Real-time question feed and answer submission will appear here in the next phase.
-          </p>
+          <div className="rounded-xl border border-white/15 bg-void/40 p-5 text-left">
+            <p className="font-display text-sm text-foreground">Your live score</p>
+            {scoreboard?.entries
+              .filter((entry) => entry.participant_id === participant?.id)
+              .map((entry) => (
+                <p key={entry.participant_id} className="mt-3 font-body text-sm text-aurora">
+                  {entry.score} pts · rank #{entry.rank}
+                </p>
+              ))}
+            {!participant && <p className="mt-3 font-body text-sm text-muted">Score updates after joining.</p>}
+          </div>
 
           <Link to="/join" className="btn-ghost mt-8 inline-block">
             Join another room

@@ -98,6 +98,20 @@ export interface SessionParticipant {
   joined_at: string
 }
 
+export interface ScoreboardEntry {
+  participant_id: string
+  display_name: string
+  score: number
+  rank: number
+}
+
+export interface SessionScoreboard {
+  session_id: string
+  status: SessionStatus
+  entries: ScoreboardEntry[]
+  winner_ids: string[]
+}
+
 export interface ApiError {
   detail: string | ApiValidationIssue[]
 }

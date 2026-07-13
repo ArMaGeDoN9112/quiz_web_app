@@ -1,6 +1,7 @@
 import secrets
 import string
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.models import (
     SessionStatus,
     User,
 )
+from app.services.scoring import ScoreCandidate, rank_scoreboard, score_selected_answers
 
 ROOM_CODE_ALPHABET = string.ascii_uppercase + string.digits
 ROOM_CODE_LENGTH = 6
@@ -89,6 +91,26 @@ class InvalidQuestionAnswerSelectionError(Exception):
 
 class DuplicateQuestionResponseError(Exception):
     pass
+
+
+class SessionScoreboardNotFoundError(Exception):
+    pass
+
+
+class SessionScoreboardAccessError(Exception):
+    pass
+
+
+class EndSessionNotFoundError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class SessionScoreboard:
+    session_id: UUID
+    status: SessionStatus
+    entries: list[dict[str, object]]
+    winner_ids: list[UUID]
 
 
 def _integrity_constraint_name(error: IntegrityError) -> str | None:
@@ -322,7 +344,8 @@ async def submit_answer(
         raise InvalidQuestionAnswerSelectionError
 
     answers_result = await session.execute(select(Answer).where(Answer.question_id == question_id))
-    valid_answer_ids = {answer.id for answer in answers_result.scalars().all()}
+    answers = answers_result.scalars().all()
+    valid_answer_ids = {answer.id for answer in answers}
     if any(answer_id not in valid_answer_ids for answer_id in selected_answer_ids):
         raise InvalidQuestionAnswerSelectionError
 
@@ -340,6 +363,11 @@ async def submit_answer(
         question_event_id=question_event.id,
         selected_answer_ids=[str(answer_id) for answer_id in selected_answer_ids],
         text_answer=text_answer,
+        awarded_points=score_selected_answers(
+            selected_answer_ids=selected_answer_ids,
+            correct_answer_ids={answer.id for answer in answers if answer.is_correct},
+            question_points=question.points,
+        ),
         meta={},
     )
     session.add(response)
@@ -357,3 +385,120 @@ async def submit_answer(
 
     await session.refresh(response)
     return response
+
+
+async def get_session_scoreboard(
+    session: AsyncSession,
+    current_user: User,
+    session_id: UUID,
+) -> SessionScoreboard:
+    session_result = await session.execute(select(QuizSession).where(QuizSession.id == session_id))
+    quiz_session = session_result.scalar_one_or_none()
+    if quiz_session is None:
+        raise SessionScoreboardNotFoundError
+
+    if current_user.id != quiz_session.organizer_id:
+        participant_result = await session.execute(
+            select(SessionParticipant).where(
+                SessionParticipant.session_id == session_id,
+                SessionParticipant.user_id == current_user.id,
+            )
+        )
+        if participant_result.scalar_one_or_none() is None:
+            raise SessionScoreboardAccessError
+
+    participants_result = await session.execute(
+        select(SessionParticipant)
+        .where(SessionParticipant.session_id == session_id)
+        .order_by(SessionParticipant.joined_at, SessionParticipant.id)
+    )
+    participants = participants_result.scalars().all()
+    responses_result = await session.execute(
+        select(QuestionResponse)
+        .join(QuestionEvent)
+        .where(QuestionEvent.session_id == session_id)
+    )
+    responses = responses_result.scalars().all()
+
+    score_by_participant = {participant.id: 0 for participant in participants}
+    for response in responses:
+        score_by_participant[response.participant_id] = (
+            score_by_participant.get(response.participant_id, 0) + response.awarded_points
+        )
+
+    ranked_entries, winner_ids = rank_scoreboard(
+        [
+            ScoreCandidate(
+                participant_id=participant.id,
+                display_name=participant.display_name,
+                joined_order=index,
+                score=score_by_participant[participant.id],
+            )
+            for index, participant in enumerate(participants, start=1)
+        ]
+    )
+    return SessionScoreboard(
+        session_id=quiz_session.id,
+        status=quiz_session.status,
+        entries=[
+            {
+                "participant_id": entry.participant_id,
+                "display_name": entry.display_name,
+                "score": entry.score,
+                "rank": entry.rank,
+            }
+            for entry in ranked_entries
+        ],
+        winner_ids=winner_ids,
+    )
+
+
+async def end_session(
+    session: AsyncSession,
+    organizer: User,
+    session_id: UUID,
+    now_factory: Callable[[], datetime] = utc_now,
+) -> SessionScoreboard:
+    session_result = await session.execute(
+        select(QuizSession).where(
+            QuizSession.id == session_id,
+            QuizSession.organizer_id == organizer.id,
+        )
+    )
+    quiz_session = session_result.scalar_one_or_none()
+    if quiz_session is None:
+        raise EndSessionNotFoundError
+
+    now = now_factory()
+    active_result = await session.execute(
+        select(QuestionEvent).where(
+            QuestionEvent.session_id == session_id,
+            QuestionEvent.status == QuestionEventStatus.ACTIVE,
+        )
+    )
+    active_event = active_result.scalar_one_or_none()
+    if active_event is not None:
+        active_event.status = QuestionEventStatus.CLOSED
+        active_event.ended_at = now
+
+    scoreboard = await get_session_scoreboard(session, organizer, session_id)
+    quiz_session.status = SessionStatus.ENDED
+    quiz_session.ended_at = now
+    quiz_session.final_results = {
+        "entries": [
+            {
+                **entry,
+                "participant_id": str(entry["participant_id"]),
+            }
+            for entry in scoreboard.entries
+        ],
+        "winner_ids": [str(winner_id) for winner_id in scoreboard.winner_ids],
+    }
+    await session.commit()
+    await session.refresh(quiz_session)
+    return SessionScoreboard(
+        session_id=scoreboard.session_id,
+        status=SessionStatus.ENDED,
+        entries=scoreboard.entries,
+        winner_ids=scoreboard.winner_ids,
+    )

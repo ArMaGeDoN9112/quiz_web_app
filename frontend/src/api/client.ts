@@ -5,6 +5,7 @@ import type {
   Quiz,
   Session,
   SessionParticipant,
+  SessionScoreboard,
   TokenResponse,
   User,
   UserRole,
@@ -130,6 +131,14 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ room_code: roomCode, display_name: displayName }),
     })
+  }
+
+  getSessionScoreboard(sessionId: string) {
+    return this.request<SessionScoreboard>(`/sessions/${sessionId}/scoreboard`)
+  }
+
+  endSession(sessionId: string) {
+    return this.request<SessionScoreboard>(`/sessions/${sessionId}/end`, { method: 'POST' })
   }
 }
 

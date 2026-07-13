@@ -62,6 +62,7 @@ class QuizSession(Base):
         onupdate=func.now(),
     )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    final_results: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     participants: Mapped[list["SessionParticipant"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
@@ -196,6 +197,7 @@ class QuestionResponse(Base):
     )
     selected_answer_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     text_answer: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    awarded_points: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

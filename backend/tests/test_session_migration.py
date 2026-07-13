@@ -34,6 +34,21 @@ def _load_active_event_index_migration_module():
     return module
 
 
+def _load_scoring_migration_module():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "20260713_0100_add_question_response_awarded_points.py"
+    )
+    spec = importlib.util.spec_from_file_location("scoring_migration", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_session_migration_extends_question_position_revision() -> None:
     migration = _load_migration_module()
 
@@ -135,3 +150,23 @@ def test_active_question_event_index_migration_adds_partial_unique_index() -> No
     assert migration.TABLE_NAME == "question_events"
     assert migration.COLUMNS == ["session_id"]
     assert "status = 'active'" in str(migration.POSTGRESQL_WHERE)
+
+
+def test_scoring_migration_adds_response_points_and_final_results(monkeypatch) -> None:
+    migration = _load_scoring_migration_module()
+    added_columns = []
+
+    monkeypatch.setattr(
+        migration.op,
+        "add_column",
+        lambda table_name, column: added_columns.append((table_name, column.name)),
+    )
+
+    migration.upgrade()
+
+    assert migration.revision == "20260713_0100"
+    assert migration.down_revision == "20260707_0200"
+    assert added_columns == [
+        ("question_responses", "awarded_points"),
+        ("sessions", "final_results"),
+    ]
