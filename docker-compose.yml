@@ -3,6 +3,8 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
       APP_NAME: Quiz Backend
       ENVIRONMENT: local
@@ -28,7 +30,7 @@ services:
       POSTGRES_USER: quiz
       POSTGRES_PASSWORD: quiz
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quiz -d quiz"]
       interval: 5s
@@ -39,4 +41,3 @@ services:
 
 volumes:
   postgres_data:
-

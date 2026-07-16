@@ -24,6 +24,11 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
+`backend/.env` is runtime-only: Docker loads it with `env_file`; Docker images
+exclude it. Set `JWT_SECRET_KEY` to a unique random value of at least 32
+characters before any non-local deployment. PostgreSQL binds to `127.0.0.1`
+only and is unavailable from other hosts by default.
+
 Run full stack with Docker:
 
 ```bash
