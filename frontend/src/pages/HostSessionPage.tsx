@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { AppShell } from '../components/AppShell'
@@ -25,8 +25,6 @@ export function HostSessionPage() {
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('manual')
   const [startingQuestion, setStartingQuestion] = useState(false)
   const [automaticQuestionIndex, setAutomaticQuestionIndex] = useState<number | null>(null)
-  const hasMountedRef = useRef(false)
-  const endRequestedRef = useRef(false)
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) navigate('/login')
@@ -53,24 +51,6 @@ export function HostSessionPage() {
     }
   }, [navigate, session])
 
-  const endSessionForAll = useCallback((keepalive: boolean) => {
-    if (!session || endRequestedRef.current) return
-    endRequestedRef.current = true
-    void api.endSession(session.id, keepalive)
-  }, [session])
-
-  useEffect(() => {
-    if (!session) return
-    const mountTimer = window.setTimeout(() => { hasMountedRef.current = true }, 0)
-    const handlePageHide = () => endSessionForAll(true)
-    window.addEventListener('pagehide', handlePageHide)
-    return () => {
-      window.clearTimeout(mountTimer)
-      window.removeEventListener('pagehide', handlePageHide)
-      if (hasMountedRef.current) endSessionForAll(true)
-    }
-  }, [endSessionForAll, session])
-
   useEffect(() => {
     if (!session) return
     Promise.all([api.listQuestions(session.quiz_id), api.getQuiz(session.quiz_id)])
@@ -87,7 +67,6 @@ export function HostSessionPage() {
 
   const endSession = useCallback(async () => {
     if (!session) return
-    endRequestedRef.current = true
     setAutomaticQuestionIndex(null)
     try {
       const finalScoreboard = await api.endSession(session.id)

@@ -196,10 +196,9 @@ class ApiClient {
     })
   }
 
-  endSession(sessionId: string, keepalive = false) {
+  endSession(sessionId: string) {
     return this.request<SessionScoreboard>(`/sessions/${sessionId}/end`, {
       method: 'POST',
-      keepalive,
     })
   }
 
