@@ -11,6 +11,7 @@ import type {
   Quiz,
   QuizSettings,
   Session,
+  SessionContext,
   SessionParticipant,
   SessionResult,
   SessionScoreboard,
@@ -156,6 +157,10 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ quiz_id: quizId }),
     })
+  }
+
+  getSessionContext(sessionId: string) {
+    return this.request<SessionContext>(`/sessions/${sessionId}`)
   }
 
   updateProfile(displayName: string) {

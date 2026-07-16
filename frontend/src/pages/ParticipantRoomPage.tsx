@@ -15,7 +15,9 @@ export function ParticipantRoomPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, loading } = useAuth()
-  const participant = (location.state as { participant?: SessionParticipant } | null)?.participant
+  const [participant, setParticipant] = useState<SessionParticipant | null>(
+    (location.state as { participant?: SessionParticipant } | null)?.participant ?? null,
+  )
   const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null)
   const [selectedAnswerIds, setSelectedAnswerIds] = useState<string[]>([])
@@ -24,11 +26,29 @@ export function ParticipantRoomPage() {
   const [submittedEventId, setSubmittedEventId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!loading && !user) navigate('/login')
+    if (!loading && (!user || user.role !== 'participant')) navigate('/login')
   }, [user, loading, navigate])
 
   useEffect(() => {
-    if (!sessionId) return
+    if (loading || !user || user.role !== 'participant' || !sessionId) return
+    let active = true
+    void api.getSessionContext(sessionId)
+      .then((context) => {
+        if (!active) return
+        if (context.participant === null) {
+          navigate('/join', { replace: true })
+          return
+        }
+        setParticipant(context.participant)
+      })
+      .catch(() => {
+        if (active) navigate('/join', { replace: true })
+      })
+    return () => { active = false }
+  }, [loading, navigate, sessionId, user])
+
+  useEffect(() => {
+    if (!sessionId || !participant) return
     let active = true
     const loadRoom = async () => {
       try {
@@ -64,7 +84,7 @@ export function ParticipantRoomPage() {
       active = false
       window.clearInterval(interval)
     }
-  }, [navigate, sessionId])
+  }, [navigate, participant, sessionId])
 
   useEffect(() => {
     setSelectedAnswerIds([])
@@ -98,7 +118,7 @@ export function ParticipantRoomPage() {
     }
   }
 
-  if (loading || !user) {
+  if (loading || !user || !participant) {
     return <AppShell><div className="p-12 text-center font-body text-muted">Loading…</div></AppShell>
   }
 

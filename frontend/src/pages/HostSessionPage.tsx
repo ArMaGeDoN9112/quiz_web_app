@@ -16,7 +16,9 @@ export function HostSessionPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, loading } = useAuth()
-  const session = (location.state as { session?: Session } | null)?.session
+  const [session, setSession] = useState<Session | null>(
+    (location.state as { session?: Session } | null)?.session ?? null,
+  )
   const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
   const [scoreboardError, setScoreboardError] = useState('')
   const [questions, setQuestions] = useState<Question[]>([])
@@ -29,6 +31,19 @@ export function HostSessionPage() {
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) navigate('/login')
   }, [user, loading, navigate])
+
+  useEffect(() => {
+    if (loading || !user || user.role !== 'organizer' || !sessionId) return
+    let active = true
+    void api.getSessionContext(sessionId)
+      .then((context) => {
+        if (active) setSession(context.session)
+      })
+      .catch((error) => {
+        if (active) setScoreboardError(error instanceof Error ? error.message : 'Session unavailable')
+      })
+    return () => { active = false }
+  }, [loading, sessionId, user])
 
   useEffect(() => {
     if (!session) return
@@ -114,7 +129,7 @@ export function HostSessionPage() {
     return (
       <AppShell>
         <div className="flex min-h-[calc(100vh-73px)] flex-col items-center justify-center gap-4 px-6">
-          <p className="font-body text-muted">{session ? 'Loading…' : 'Session not found. Launch from dashboard.'}</p>
+          <p className="font-body text-muted">{session ? 'Loading…' : scoreboardError || 'Loading session…'}</p>
           {!session && <Link to="/dashboard" className="btn-primary">Back to dashboard</Link>}
         </div>
       </AppShell>

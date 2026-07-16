@@ -44,6 +44,11 @@ class SessionParticipantResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SessionContextResponse(BaseModel):
+    session: SessionResponse
+    participant: SessionParticipantResponse | None
+
+
 class StartQuestionRequest(BaseModel):
     question_id: uuid.UUID
     duration_seconds: int | None = Field(default=None, ge=1, le=3600)

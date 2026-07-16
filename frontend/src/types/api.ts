@@ -104,6 +104,11 @@ export interface SessionParticipant {
   joined_at: string
 }
 
+export interface SessionContext {
+  session: Session
+  participant: SessionParticipant | null
+}
+
 export interface QuestionEvent {
   id: string
   session_id: string

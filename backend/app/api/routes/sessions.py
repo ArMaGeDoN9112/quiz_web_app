@@ -18,6 +18,7 @@ from app.schemas.session import (
     ParticipantSessionHistoryResponse,
     SessionJoinRequest,
     SessionLaunchRequest,
+    SessionContextResponse,
     SessionParticipantResponse,
     SessionResponse,
     SessionResultResponse,
@@ -44,6 +45,8 @@ from app.services.session import (
     RoomCodeConflictError,
     SessionScoreboardAccessError,
     SessionScoreboardNotFoundError,
+    SessionContextAccessError,
+    SessionContextNotFoundError,
     SessionQuestionNotFoundError,
     SessionNotJoinableError,
     SessionQuizNotFoundError,
@@ -53,6 +56,7 @@ from app.services.session import (
     end_session,
     get_session_scoreboard,
     get_current_question,
+    get_session_context,
     get_organizer_session_history,
     get_participant_session_history,
     get_session_result,
@@ -87,6 +91,28 @@ async def organizer_history_endpoint(
 ) -> list[OrganizerSessionHistoryResponse]:
     history = await get_organizer_session_history(session, current_user)
     return [OrganizerSessionHistoryResponse.model_validate(item) for item in history]
+
+
+@router.get("/{session_id}", response_model=SessionContextResponse)
+async def session_context_endpoint(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> SessionContextResponse:
+    try:
+        context = await get_session_context(session, current_user, session_id)
+    except SessionContextNotFoundError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
+    except SessionContextAccessError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session access denied") from error
+    return SessionContextResponse(
+        session=SessionResponse.model_validate(context.session),
+        participant=(
+            SessionParticipantResponse.model_validate(context.participant)
+            if context.participant is not None
+            else None
+        ),
+    )
 
 
 @router.get("/{session_id}/result", response_model=SessionResultResponse)

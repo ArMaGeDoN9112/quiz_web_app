@@ -122,12 +122,51 @@ class SessionResultAccessError(Exception):
     pass
 
 
+class SessionContextNotFoundError(Exception):
+    pass
+
+
+class SessionContextAccessError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class SessionScoreboard:
     session_id: UUID
     status: SessionStatus
     entries: list[dict[str, object]]
     winner_ids: list[UUID]
+
+
+@dataclass(frozen=True)
+class SessionContext:
+    session: QuizSession
+    participant: SessionParticipant | None
+
+
+async def get_session_context(
+    session: AsyncSession,
+    current_user: User,
+    session_id: UUID,
+) -> SessionContext:
+    session_result = await session.execute(select(QuizSession).where(QuizSession.id == session_id))
+    quiz_session = session_result.scalar_one_or_none()
+    if quiz_session is None:
+        raise SessionContextNotFoundError
+
+    if current_user.id == quiz_session.organizer_id:
+        return SessionContext(session=quiz_session, participant=None)
+
+    participant_result = await session.execute(
+        select(SessionParticipant).where(
+            SessionParticipant.session_id == session_id,
+            SessionParticipant.user_id == current_user.id,
+        )
+    )
+    participant = participant_result.scalar_one_or_none()
+    if participant is None:
+        raise SessionContextAccessError
+    return SessionContext(session=quiz_session, participant=participant)
 
 
 def _final_result_entries(quiz_session: QuizSession) -> list[dict[str, object]]:

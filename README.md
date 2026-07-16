@@ -76,7 +76,7 @@ npm run build
 - `POST /auth/register`, `POST /auth/login`
 - `GET /users/me`
 - `GET|POST|PATCH|DELETE /quizzes`
-- `POST /sessions`, `POST /sessions/join`
+- `POST /sessions`, `POST /sessions/join`, `GET /sessions/{id}`
 - `POST /sessions/{id}/answer`
 - `GET /sessions/{id}/scoreboard`, `POST /sessions/{id}/end`
 
