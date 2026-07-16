@@ -26,8 +26,8 @@ cp frontend/.env.example frontend/.env
 
 `backend/.env` is runtime-only: Docker loads it with `env_file`; Docker images
 exclude it. Set `JWT_SECRET_KEY` to a unique random value of at least 32
-characters before any non-local deployment. PostgreSQL binds to `127.0.0.1`
-only and is unavailable from other hosts by default.
+characters before any non-local deployment. PostgreSQL is available only to
+Docker services by default and has no host port.
 
 Run full stack with Docker:
 
@@ -79,6 +79,10 @@ npm run build
 - `POST /sessions`, `POST /sessions/join`
 - `POST /sessions/{id}/answer`
 - `GET /sessions/{id}/scoreboard`, `POST /sessions/{id}/end`
+
+Automatic playback runs in backend process: after host starts first question,
+server advances timed questions and ends session after last question. PostgreSQL
+row locking prevents duplicate transitions when multiple API processes run.
 
 ## Implementation Phase Plan
 

@@ -24,7 +24,7 @@ export function HostSessionPage() {
   const [questionId, setQuestionId] = useState('')
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('manual')
   const [startingQuestion, setStartingQuestion] = useState(false)
-  const [automaticQuestionIndex, setAutomaticQuestionIndex] = useState<number | null>(null)
+  const [automaticStarted, setAutomaticStarted] = useState(false)
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) navigate('/login')
@@ -67,7 +67,7 @@ export function HostSessionPage() {
 
   const endSession = useCallback(async () => {
     if (!session) return
-    setAutomaticQuestionIndex(null)
+    setAutomaticStarted(false)
     try {
       const finalScoreboard = await api.endSession(session.id)
       setScoreboard(finalScoreboard)
@@ -98,7 +98,7 @@ export function HostSessionPage() {
     setStartingQuestion(true)
     try {
       await api.startQuestion(session.id, questions[0].id, questions[0].duration_seconds)
-      setAutomaticQuestionIndex(0)
+      setAutomaticStarted(true)
       setScoreboardError('')
     } catch (error) {
       setScoreboardError(error instanceof Error ? error.message : 'Could not start automatic quiz')
@@ -107,33 +107,8 @@ export function HostSessionPage() {
     }
   }
 
-  useEffect(() => {
-    if (!session || playbackMode !== 'automatic' || automaticQuestionIndex === null) return
-    const currentQuestion = questions[automaticQuestionIndex]
-    if (!currentQuestion) return
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const nextIndex = automaticQuestionIndex + 1
-        try {
-          if (nextIndex >= questions.length) {
-            await endSession()
-            return
-          }
-          const nextQuestion = questions[nextIndex]
-          await api.startQuestion(session.id, nextQuestion.id, nextQuestion.duration_seconds)
-          setAutomaticQuestionIndex(nextIndex)
-          setScoreboardError('')
-        } catch (error) {
-          setAutomaticQuestionIndex(null)
-          setScoreboardError(error instanceof Error ? error.message : 'Could not continue automatic quiz')
-        }
-      })()
-    }, currentQuestion.duration_seconds * 1000)
-    return () => window.clearTimeout(timer)
-  }, [automaticQuestionIndex, endSession, playbackMode, questions, session])
-
   const availableQuestions = questions.filter((question) => !usedQuestionIds.includes(question.id))
-  const automaticRunning = automaticQuestionIndex !== null
+  const automaticRunning = automaticStarted
 
   if (loading || !user || !session) {
     return (
@@ -166,14 +141,14 @@ export function HostSessionPage() {
                   <p className="mt-3 font-body text-sm text-muted">Add questions to this quiz before starting.</p>
                 ) : automaticRunning ? (
                   <p className="mt-3 font-body text-sm text-muted">
-                    Running question {automaticQuestionIndex + 1} of {questions.length}. Next question starts automatically.
+                    Server runs remaining questions and ends session after last.
                   </p>
                 ) : (
                   <div className="mt-4 flex flex-wrap items-center gap-3">
                     <button type="button" className="btn-primary" onClick={startAutomaticQuiz} disabled={startingQuestion}>
                       {startingQuestion ? 'Starting…' : 'Start automatic quiz'}
                     </button>
-                    <span className="font-body text-xs text-muted">Questions run in position order and session ends after last.</span>
+                    <span className="font-body text-xs text-muted">Server starts next question after each deadline.</span>
                   </div>
                 )
               ) : availableQuestions.length === 0 ? (

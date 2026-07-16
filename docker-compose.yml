@@ -29,8 +29,6 @@ services:
       POSTGRES_DB: quiz
       POSTGRES_USER: quiz
       POSTGRES_PASSWORD: quiz
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quiz -d quiz"]
       interval: 5s
