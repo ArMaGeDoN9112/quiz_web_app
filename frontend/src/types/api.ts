@@ -25,7 +25,7 @@ export interface QuizSettings {
   shuffle_questions: boolean
   shuffle_answers: boolean
   show_correct_answers: boolean
-  scoring_mode: 'standard' | 'speed_bonus'
+  scoring_mode: 'standard'
   playback_mode: PlaybackMode
 }
 
@@ -128,6 +128,7 @@ export interface CurrentQuestion {
   text: string
   image_url: string | null
   ends_at: string | null
+  shuffle_answers: boolean
   answers: CurrentQuestionAnswer[]
 }
 

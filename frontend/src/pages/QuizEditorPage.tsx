@@ -14,6 +14,7 @@ import {
   type QuestionField,
   type QuestionFormErrors,
 } from '../features/questionAuthoring'
+import { buildQuizOrderSettingsUpdate } from '../features/quizSettings'
 import type { ChoiceMode, PlaybackMode, Question, QuestionType, Quiz } from '../types/api'
 
 let answerIndex = 0
@@ -90,6 +91,9 @@ export function QuizEditorPage() {
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null)
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('manual')
   const [savingPlaybackMode, setSavingPlaybackMode] = useState(false)
+  const [shuffleQuestions, setShuffleQuestions] = useState(false)
+  const [shuffleAnswers, setShuffleAnswers] = useState(false)
+  const [savingOrderSettings, setSavingOrderSettings] = useState(false)
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'organizer')) {
@@ -109,6 +113,8 @@ export function QuizEditorPage() {
         setQuiz(loadedQuiz)
         setQuestions(loadedQuestions)
         setPlaybackMode(loadedQuiz.settings.playback_mode)
+        setShuffleQuestions(loadedQuiz.settings.shuffle_questions)
+        setShuffleAnswers(loadedQuiz.settings.shuffle_answers)
       })
       .catch((err) => {
         setPageError(err instanceof Error ? err.message : 'Failed to load quiz editor')
@@ -216,6 +222,22 @@ export function QuizEditorPage() {
     }
   }
 
+  const saveOrderSettings = async () => {
+    if (!quizId) return
+    setSavingOrderSettings(true)
+    setPageError('')
+    try {
+      setQuiz(await api.updateQuizOrderSettings(
+        quizId,
+        buildQuizOrderSettingsUpdate(shuffleQuestions, shuffleAnswers),
+      ))
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Could not save question order settings')
+    } finally {
+      setSavingOrderSettings(false)
+    }
+  }
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!quizId) {
@@ -301,6 +323,9 @@ export function QuizEditorPage() {
                 {quiz.settings.playback_mode} playback
               </span>
               <span className="rounded-lg border border-white/10 bg-void/50 px-3 py-2">
+                Question order: {quiz.settings.shuffle_questions ? 'random' : 'fixed'}
+              </span>
+              <span className="rounded-lg border border-white/10 bg-void/50 px-3 py-2">
                 Shuffle answers: {quiz.settings.shuffle_answers ? 'on' : 'off'}
               </span>
             </div>
@@ -330,6 +355,49 @@ export function QuizEditorPage() {
                 disabled={savingPlaybackMode || playbackMode === quiz?.settings.playback_mode}
               >
                 {savingPlaybackMode ? 'Saving…' : 'Save playback mode'}
+              </button>
+            </div>
+            <div className="mb-6 rounded-lg border border-violet/25 bg-violet/5 p-4">
+              <p className="font-body text-sm font-medium text-foreground">Question order</p>
+              <div className="mt-3 space-y-3 font-body text-sm text-muted">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="question-order"
+                    checked={!shuffleQuestions}
+                    onChange={() => setShuffleQuestions(false)}
+                  />
+                  Fixed order
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="question-order"
+                    checked={shuffleQuestions}
+                    onChange={() => setShuffleQuestions(true)}
+                  />
+                  Random order
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={shuffleAnswers}
+                    onChange={(event) => setShuffleAnswers(event.target.checked)}
+                  />
+                  Randomize answer options
+                </label>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost mt-4 text-xs"
+                onClick={saveOrderSettings}
+                disabled={
+                  savingOrderSettings ||
+                  (shuffleQuestions === quiz?.settings.shuffle_questions &&
+                    shuffleAnswers === quiz?.settings.shuffle_answers)
+                }
+              >
+                {savingOrderSettings ? 'Saving…' : 'Save order settings'}
               </button>
             </div>
             <div className="flex items-center justify-between gap-3">

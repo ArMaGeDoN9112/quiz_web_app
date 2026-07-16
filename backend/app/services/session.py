@@ -42,10 +42,6 @@ class SessionNotJoinableError(Exception):
     pass
 
 
-class DuplicateSessionParticipantError(Exception):
-    pass
-
-
 class ProfileDisplayNameRequiredError(Exception):
     pass
 
@@ -340,8 +336,9 @@ async def join_session(
             SessionParticipant.user_id == participant.id,
         )
     )
-    if existing_result.scalar_one_or_none() is not None:
-        raise DuplicateSessionParticipantError
+    existing_participant = existing_result.scalar_one_or_none()
+    if existing_participant is not None:
+        return existing_participant
 
     session_participant = SessionParticipant(
         session_id=quiz_session.id,
@@ -358,7 +355,15 @@ async def join_session(
             _integrity_constraint_name(error)
             == "uq_session_participants_session_id_user_id"
         ):
-            raise DuplicateSessionParticipantError from error
+            existing_result = await session.execute(
+                select(SessionParticipant).where(
+                    SessionParticipant.session_id == quiz_session.id,
+                    SessionParticipant.user_id == participant.id,
+                )
+            )
+            existing_participant = existing_result.scalar_one_or_none()
+            if existing_participant is not None:
+                return existing_participant
         raise
 
     await session.refresh(session_participant)
@@ -576,6 +581,11 @@ async def get_current_question(
     if question is None:
         raise CurrentQuestionNotFoundError
 
+    quiz_settings_result = await session.execute(
+        select(Quiz.settings).where(Quiz.id == quiz_session.quiz_id)
+    )
+    quiz_settings = quiz_settings_result.scalar_one_or_none()
+
     return {
         "event_id": question_event.id,
         "session_id": quiz_session.id,
@@ -585,6 +595,9 @@ async def get_current_question(
         "text": question.text,
         "image_url": question.image_url,
         "ends_at": question_event.ended_at,
+        "shuffle_answers": bool(
+            isinstance(quiz_settings, dict) and quiz_settings.get("shuffle_answers", False)
+        ),
         "answers": [
             {"id": answer.id, "text": answer.text, "position": answer.position}
             for answer in question.answers

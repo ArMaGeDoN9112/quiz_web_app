@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
 from app.models import QuizSession, SessionParticipant, SessionStatus, User, UserRole
 from app.services.session import (
-    DuplicateSessionParticipantError,
     SessionNotJoinableError,
     join_session,
 )
@@ -24,8 +24,13 @@ class FakeScalarResult:
 
 
 class FakeSession:
-    def __init__(self, results: list[object | None]) -> None:
+    def __init__(
+        self,
+        results: list[object | None],
+        commit_error: IntegrityError | None = None,
+    ) -> None:
         self.results = results
+        self.commit_error = commit_error
         self.statements: list[object] = []
         self.added_participants: list[SessionParticipant] = []
         self.committed = False
@@ -39,6 +44,10 @@ class FakeSession:
             self.added_participants.append(obj)
 
     async def commit(self) -> None:
+        if self.commit_error is not None:
+            error = self.commit_error
+            self.commit_error = None
+            raise error
         self.committed = True
 
     async def rollback(self) -> None:
@@ -83,6 +92,10 @@ def _participant(quiz_session: QuizSession, user: User) -> SessionParticipant:
     return participant
 
 
+class DuplicateParticipantConstraintError(Exception):
+    constraint_name = "uq_session_participants_session_id_user_id"
+
+
 def _client_with_session(fake_session: FakeSession) -> TestClient:
     app = create_app()
 
@@ -121,6 +134,17 @@ def test_participant_joins_waiting_session() -> None:
     assert fake_session.committed is True
 
 
+def test_participant_joins_active_session() -> None:
+    participant_user = _user("participant@example.com")
+    active_session = _quiz_session(SessionStatus.ACTIVE)
+    fake_session = FakeSession(results=[active_session, None])
+
+    session_participant = asyncio.run(join_session(fake_session, participant_user, "ABC123"))
+
+    assert session_participant.session_id == active_session.id
+    assert fake_session.committed is True
+
+
 def test_join_session_rejects_ended_room() -> None:
     participant_user = _user("participant@example.com")
     ended_session = _quiz_session(SessionStatus.ENDED)
@@ -137,21 +161,31 @@ def test_join_session_rejects_ended_room() -> None:
     assert fake_session.committed is False
 
 
-def test_join_session_rejects_duplicate_participant() -> None:
+def test_join_session_returns_existing_participant_for_repeat_join() -> None:
     participant_user = _user("participant@example.com")
     quiz_session = _quiz_session()
     existing_participant = _participant(quiz_session, participant_user)
     fake_session = FakeSession(results=[quiz_session, existing_participant])
 
-    try:
-        asyncio.run(join_session(fake_session, participant_user, "ABC123"))
-    except DuplicateSessionParticipantError:
-        pass
-    else:
-        raise AssertionError("Expected DuplicateSessionParticipantError")
+    session_participant = asyncio.run(join_session(fake_session, participant_user, "ABC123"))
 
+    assert session_participant is existing_participant
     assert fake_session.added_participants == []
     assert fake_session.committed is False
+
+
+def test_join_session_returns_existing_participant_after_concurrent_join() -> None:
+    participant_user = _user("participant@example.com")
+    quiz_session = _quiz_session()
+    existing_participant = _participant(quiz_session, participant_user)
+    fake_session = FakeSession(
+        results=[quiz_session, None, existing_participant],
+        commit_error=IntegrityError(None, None, DuplicateParticipantConstraintError()),
+    )
+
+    session_participant = asyncio.run(join_session(fake_session, participant_user, "ABC123"))
+
+    assert session_participant is existing_participant
 
 
 def test_join_endpoint_maps_inactive_room_to_404() -> None:
@@ -169,7 +203,7 @@ def test_join_endpoint_maps_inactive_room_to_404() -> None:
     assert response.json() == {"detail": "Session is not joinable"}
 
 
-def test_join_endpoint_maps_duplicate_join_to_409() -> None:
+def test_join_endpoint_returns_existing_participant_for_repeat_join() -> None:
     participant_user = _user("participant@example.com")
     quiz_session = _quiz_session()
     existing_participant = _participant(quiz_session, participant_user)
@@ -182,8 +216,10 @@ def test_join_endpoint_maps_duplicate_join_to_409() -> None:
         headers=_auth_header(participant_user),
     )
 
-    assert response.status_code == 409
-    assert response.json() == {"detail": "User already joined session"}
+    assert response.status_code == 201
+    assert response.json()["id"] == str(existing_participant.id)
+    assert response.json()["session_id"] == str(quiz_session.id)
+    assert fake_session.added_participants == []
 
 
 def test_join_endpoint_requires_participant_role() -> None:

@@ -116,7 +116,18 @@ def test_joined_participant_gets_active_question_without_correct_answers() -> No
     participant = _participant(quiz_session, participant_user)
     question = _question(quiz_session)
     event = _event(quiz_session, question)
-    client = _client(FakeSession([participant_user, quiz_session, participant, event, question]))
+    client = _client(
+        FakeSession(
+            [
+                participant_user,
+                quiz_session,
+                participant,
+                event,
+                question,
+                {"shuffle_answers": True},
+            ]
+        )
+    )
 
     response = client.get(f"/sessions/{quiz_session.id}/questions/current", headers=_headers(participant_user))
 
@@ -124,6 +135,7 @@ def test_joined_participant_gets_active_question_without_correct_answers() -> No
     body = response.json()
     assert body["event_id"] == str(event.id)
     assert body["text"] == "Capital of France?"
+    assert body["shuffle_answers"] is True
     assert body["answers"] == [
         {"id": str(question.answers[0].id), "text": "Paris", "position": 1},
         {"id": str(question.answers[1].id), "text": "Rome", "position": 2},

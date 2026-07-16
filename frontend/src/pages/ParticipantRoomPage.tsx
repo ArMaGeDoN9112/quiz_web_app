@@ -7,6 +7,7 @@ import { ParticleField } from '../components/ParticleField'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { hasSessionEnded } from '../features/sessionLifecycle'
+import { orderQuizItems } from '../features/quizSettings'
 import type { CurrentQuestion, SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function ParticipantRoomPage() {
@@ -43,7 +44,16 @@ export function ParticipantRoomPage() {
       }
       try {
         const nextQuestion = await api.getCurrentQuestion(sessionId)
-        if (active) setCurrentQuestion(nextQuestion)
+        if (active) {
+          setCurrentQuestion((current) => (
+            current?.event_id === nextQuestion.event_id
+              ? current
+              : {
+                  ...nextQuestion,
+                  answers: orderQuizItems(nextQuestion.answers, nextQuestion.shuffle_answers),
+                }
+          ))
+        }
       } catch {
         if (active) setCurrentQuestion(null)
       }

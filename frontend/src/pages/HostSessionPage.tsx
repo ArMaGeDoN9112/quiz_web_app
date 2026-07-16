@@ -8,6 +8,7 @@ import { RoomCodeDisplay } from '../components/RoomCodeDisplay'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { hasSessionEnded } from '../features/sessionLifecycle'
+import { orderQuizItems } from '../features/quizSettings'
 import type { PlaybackMode, Question, Session, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
@@ -74,8 +75,9 @@ export function HostSessionPage() {
     if (!session) return
     Promise.all([api.listQuestions(session.quiz_id), api.getQuiz(session.quiz_id)])
       .then(([nextQuestions, quiz]) => {
-        setQuestions(nextQuestions)
-        setQuestionId(nextQuestions[0]?.id ?? '')
+        const orderedQuestions = orderQuizItems(nextQuestions, quiz.settings.shuffle_questions)
+        setQuestions(orderedQuestions)
+        setQuestionId(orderedQuestions[0]?.id ?? '')
         setPlaybackMode(quiz.settings.playback_mode)
       })
       .catch((error) => {

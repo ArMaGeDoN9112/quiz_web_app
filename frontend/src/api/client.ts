@@ -9,6 +9,7 @@ import type {
   PlaybackMode,
   ParticipantSessionHistory,
   Quiz,
+  QuizSettings,
   Session,
   SessionParticipant,
   SessionResult,
@@ -115,6 +116,16 @@ class ApiClient {
     return this.request<Quiz>(`/quizzes/${quizId}`, {
       method: 'PATCH',
       body: JSON.stringify({ settings: { playback_mode: playbackMode } }),
+    })
+  }
+
+  updateQuizOrderSettings(
+    quizId: string,
+    settings: Pick<QuizSettings, 'shuffle_questions' | 'shuffle_answers'>,
+  ) {
+    return this.request<Quiz>(`/quizzes/${quizId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ settings }),
     })
   }
 

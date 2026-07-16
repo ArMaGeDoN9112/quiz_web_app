@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "tsc -p tsconfig.test.json && node dist-tests/tests/questionAuthoring.test.js && node dist-tests/tests/sessionLifecycle.test.js",
+    "test": "tsc -p tsconfig.test.json && node dist-tests/tests/questionAuthoring.test.js && node dist-tests/tests/sessionLifecycle.test.js && node dist-tests/tests/quizSettings.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

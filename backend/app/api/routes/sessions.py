@@ -33,7 +33,6 @@ from app.services.session import (
     AnswerSessionEndedError,
     DuplicateQuestionEventError,
     DuplicateQuestionResponseError,
-    DuplicateSessionParticipantError,
     CurrentQuestionAccessError,
     CurrentQuestionNotFoundError,
     EndSessionNotFoundError,
@@ -150,11 +149,6 @@ async def join_session_endpoint(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session is not joinable",
-        ) from error
-    except DuplicateSessionParticipantError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User already joined session",
         ) from error
     except ProfileDisplayNameRequiredError as error:
         raise HTTPException(

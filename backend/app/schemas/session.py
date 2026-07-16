@@ -75,6 +75,7 @@ class CurrentQuestionResponse(BaseModel):
     text: str
     image_url: str | None
     ends_at: datetime | None
+    shuffle_answers: bool
     answers: list[PublicAnswerResponse]
 
 

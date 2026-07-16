@@ -2,7 +2,6 @@ import { motion } from 'motion/react'
 import { Link } from 'react-router-dom'
 
 import { AppShell } from '../components/AppShell'
-import { GlassPanel } from '../components/GlassPanel'
 import { ParticleField } from '../components/ParticleField'
 
 export function HomePage() {
@@ -40,44 +39,6 @@ export function HomePage() {
             </Link>
           </div>
         </motion.div>
-
-        <div className="mt-20 grid gap-6 sm:grid-cols-3">
-          {[
-            {
-              step: '01',
-              title: 'Build',
-              text: 'Draft quizzes with timed questions and scoring rules.',
-              glow: 'aurora' as const,
-            },
-            {
-              step: '02',
-              title: 'Launch',
-              text: 'Generate a unique room code and open the live session.',
-              glow: 'violet' as const,
-            },
-            {
-              step: '03',
-              title: 'Compete',
-              text: 'Participants answer in sync. Scores update instantly.',
-              glow: 'plasma' as const,
-            },
-          ].map((item, index) => (
-            <motion.div
-              key={item.step}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 + index * 0.1, duration: 0.5 }}
-            >
-              <GlassPanel glow={item.glow} className="h-full">
-                <p className="font-display text-xs text-muted">{item.step}</p>
-                <h2 className="mt-2 font-display text-lg text-foreground">{item.title}</h2>
-                <p className="mt-2 font-body text-sm leading-relaxed text-muted">
-                  {item.text}
-                </p>
-              </GlassPanel>
-            </motion.div>
-          ))}
-        </div>
       </section>
     </AppShell>
   )
