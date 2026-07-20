@@ -18,7 +18,8 @@ import type {
   TokenResponse,
   User,
   UserRole,
-} from '../types/api'
+} from '../types/api.js'
+import { createScoreboardWebSocketUrl } from '../features/liveScoreboard.js'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
@@ -39,6 +40,11 @@ class ApiClient {
 
   setToken(token: string | null) {
     this.token = token
+  }
+
+  openSessionScoreboardSocket(roomCode: string): WebSocket | null {
+    if (!this.token) return null
+    return new WebSocket(createScoreboardWebSocketUrl(API_URL, roomCode, this.token))
   }
 
   private async request<T>(

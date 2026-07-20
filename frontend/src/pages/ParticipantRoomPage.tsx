@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { AppShell } from '../components/AppShell'
@@ -8,6 +8,7 @@ import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { hasSessionEnded } from '../features/sessionLifecycle'
 import { orderQuizItems } from '../features/quizSettings'
+import { useLiveScoreboard } from '../features/useLiveScoreboard'
 import type { CurrentQuestion, SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function ParticipantRoomPage() {
@@ -18,6 +19,7 @@ export function ParticipantRoomPage() {
   const [participant, setParticipant] = useState<SessionParticipant | null>(
     (location.state as { participant?: SessionParticipant } | null)?.participant ?? null,
   )
+  const [roomCode, setRoomCode] = useState<string | null>(null)
   const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
   const [currentQuestion, setCurrentQuestion] = useState<CurrentQuestion | null>(null)
   const [selectedAnswerIds, setSelectedAnswerIds] = useState<string[]>([])
@@ -40,6 +42,7 @@ export function ParticipantRoomPage() {
           return
         }
         setParticipant(context.participant)
+        setRoomCode(context.session.room_code)
       })
       .catch(() => {
         if (active) navigate('/join', { replace: true })
@@ -47,21 +50,17 @@ export function ParticipantRoomPage() {
     return () => { active = false }
   }, [loading, navigate, sessionId, user])
 
+  const handleScoreboard = useCallback((nextScoreboard: SessionScoreboard) => {
+    setScoreboard(nextScoreboard)
+    if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
+  }, [navigate])
+
+  useLiveScoreboard(sessionId, roomCode ?? undefined, handleScoreboard)
+
   useEffect(() => {
     if (!sessionId || !participant) return
     let active = true
     const loadRoom = async () => {
-      try {
-        const nextScoreboard = await api.getSessionScoreboard(sessionId)
-        if (!active) return
-        setScoreboard(nextScoreboard)
-        if (hasSessionEnded(nextScoreboard)) {
-          navigate('/', { replace: true })
-          return
-        }
-      } catch {
-        // The room can still be loading while the join request settles.
-      }
       try {
         const nextQuestion = await api.getCurrentQuestion(sessionId)
         if (active) {

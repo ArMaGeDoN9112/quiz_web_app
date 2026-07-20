@@ -9,6 +9,7 @@ import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { hasSessionEnded } from '../features/sessionLifecycle'
 import { orderQuizItems } from '../features/quizSettings'
+import { useLiveScoreboard } from '../features/useLiveScoreboard'
 import type { PlaybackMode, Question, Session, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
@@ -45,26 +46,12 @@ export function HostSessionPage() {
     return () => { active = false }
   }, [loading, sessionId, user])
 
-  useEffect(() => {
-    if (!session) return
-    let active = true
-    const loadScoreboard = async () => {
-      try {
-        const nextScoreboard = await api.getSessionScoreboard(session.id)
-        if (!active) return
-        setScoreboard(nextScoreboard)
-        if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
-      } catch (error) {
-        if (active) setScoreboardError(error instanceof Error ? error.message : 'Scoreboard unavailable')
-      }
-    }
-    void loadScoreboard()
-    const interval = window.setInterval(loadScoreboard, 2000)
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
-  }, [navigate, session])
+  const handleScoreboard = useCallback((nextScoreboard: SessionScoreboard) => {
+    setScoreboard(nextScoreboard)
+    if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
+  }, [navigate])
+
+  useLiveScoreboard(session?.id, session?.room_code, handleScoreboard)
 
   useEffect(() => {
     if (!session) return
