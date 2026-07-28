@@ -1,16 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { buildQuizOrderSettingsUpdate, orderQuizItems } from '../src/features/quizSettings.js'
-
-assert.deepEqual(buildQuizOrderSettingsUpdate(false, false), {
-  shuffle_questions: false,
-  shuffle_answers: false,
-})
-
-assert.deepEqual(buildQuizOrderSettingsUpdate(true, true), {
-  shuffle_questions: true,
-  shuffle_answers: true,
-})
+import { orderQuizItems } from '../src/features/quizSettings.js'
 
 const items = ['first', 'second', 'third']
 assert.deepEqual(orderQuizItems(items, false), items)

@@ -10,9 +10,7 @@ def score_selected_answers(
     question_points: int,
 ) -> int:
     """Return standard all-or-nothing points for a choice question."""
-    if set(selected_answer_ids) == set(correct_answer_ids):
-        return question_points
-    return 0
+    return question_points if set(selected_answer_ids) == set(correct_answer_ids) else 0
 
 
 @dataclass(frozen=True)

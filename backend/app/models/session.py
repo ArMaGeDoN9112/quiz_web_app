@@ -135,12 +135,20 @@ class QuestionEvent(Base):
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("sessions.id", name="fk_question_events_session_id_sessions", ondelete="CASCADE"),
+        ForeignKey(
+            "sessions.id",
+            name="fk_question_events_session_id_sessions",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("questions.id", name="fk_question_events_question_id_questions", ondelete="CASCADE"),
+        ForeignKey(
+            "questions.id",
+            name="fk_question_events_question_id_questions",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
     status: Mapped[QuestionEventStatus] = mapped_column(

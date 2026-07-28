@@ -6,6 +6,13 @@ export type SessionStatus = 'waiting' | 'active' | 'ended'
 
 export type PlaybackMode = 'manual' | 'automatic'
 
+export type ScoringMode = 'standard' | 'speed_bonus'
+
+export interface PaginationParams {
+  limit?: number
+  offset?: number
+}
+
 export interface User {
   id: string
   email: string
@@ -25,7 +32,7 @@ export interface QuizSettings {
   shuffle_questions: boolean
   shuffle_answers: boolean
   show_correct_answers: boolean
-  scoring_mode: 'standard'
+  scoring_mode: ScoringMode
   playback_mode: PlaybackMode
 }
 
@@ -135,6 +142,11 @@ export interface CurrentQuestion {
   ends_at: string | null
   shuffle_answers: boolean
   answers: CurrentQuestionAnswer[]
+}
+
+export interface SessionLiveUpdate {
+  scoreboard: SessionScoreboard
+  current_question: CurrentQuestion | null
 }
 
 export interface QuestionAnswer {

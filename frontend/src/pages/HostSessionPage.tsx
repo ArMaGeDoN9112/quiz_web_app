@@ -7,10 +7,9 @@ import { ParticleField } from '../components/ParticleField'
 import { RoomCodeDisplay } from '../components/RoomCodeDisplay'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { hasSessionEnded } from '../features/sessionLifecycle'
 import { orderQuizItems } from '../features/quizSettings'
 import { useLiveScoreboard } from '../features/useLiveScoreboard'
-import type { PlaybackMode, Question, Session, SessionScoreboard } from '../types/api'
+import type { PlaybackMode, Question, Session, SessionLiveUpdate, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
   const { sessionId } = useParams()
@@ -46,16 +45,16 @@ export function HostSessionPage() {
     return () => { active = false }
   }, [loading, sessionId, user])
 
-  const handleScoreboard = useCallback((nextScoreboard: SessionScoreboard) => {
-    setScoreboard(nextScoreboard)
-    if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
+  const handleSessionUpdate = useCallback((update: SessionLiveUpdate) => {
+    setScoreboard(update.scoreboard)
+    if (update.scoreboard.status === 'ended') navigate('/', { replace: true })
   }, [navigate])
 
-  useLiveScoreboard(session?.id, session?.room_code, handleScoreboard)
+  const { sendCommand } = useLiveScoreboard(session?.id, session?.room_code, handleSessionUpdate)
 
   useEffect(() => {
     if (!session) return
-    Promise.all([api.listQuestions(session.quiz_id), api.getQuiz(session.quiz_id)])
+    Promise.all([api.listAllQuestions(session.quiz_id), api.getQuiz(session.quiz_id)])
       .then(([nextQuestions, quiz]) => {
         const orderedQuestions = orderQuizItems(nextQuestions, quiz.settings.shuffle_questions)
         setQuestions(orderedQuestions)
@@ -71,20 +70,19 @@ export function HostSessionPage() {
     if (!session) return
     setAutomaticStarted(false)
     try {
-      const finalScoreboard = await api.endSession(session.id)
-      setScoreboard(finalScoreboard)
+      await sendCommand({ type: 'session.end' })
       setScoreboardError('')
       navigate('/', { replace: true })
     } catch (error) {
       setScoreboardError(error instanceof Error ? error.message : 'Could not end session')
     }
-  }, [navigate, session])
+  }, [navigate, sendCommand, session])
 
   const startManualQuestion = async () => {
     if (!session || !questionId) return
     setStartingQuestion(true)
     try {
-      await api.startQuestion(session.id, questionId)
+      await sendCommand({ type: 'question.start', question_id: questionId })
       setUsedQuestionIds((current) => [...current, questionId])
       setQuestionId(questions.find((question) => question.id !== questionId && !usedQuestionIds.includes(question.id))?.id ?? '')
       setScoreboardError('')
@@ -99,7 +97,7 @@ export function HostSessionPage() {
     if (!session || questions.length === 0) return
     setStartingQuestion(true)
     try {
-      await api.startQuestion(session.id, questions[0].id, questions[0].duration_seconds)
+      await sendCommand({ type: 'question.start', question_id: questions[0].id, duration_seconds: questions[0].duration_seconds })
       setAutomaticStarted(true)
       setScoreboardError('')
     } catch (error) {

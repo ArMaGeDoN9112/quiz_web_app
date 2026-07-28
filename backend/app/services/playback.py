@@ -6,7 +6,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Question, QuestionEvent, QuestionEventStatus, Quiz, QuizSession, SessionStatus, User
+from app.models import (
+    Question,
+    QuestionEvent,
+    QuestionEventStatus,
+    Quiz,
+    QuizSession,
+    SessionStatus,
+    User,
+)
 from app.services.session import end_session, start_question, utc_now
 
 
@@ -71,7 +79,9 @@ async def advance_automatic_session(
         shuffle_questions=bool(quiz.settings.get("shuffle_questions", False)),
     )
 
-    organizer_result = await session.execute(select(User).where(User.id == quiz_session.organizer_id))
+    organizer_result = await session.execute(
+        select(User).where(User.id == quiz_session.organizer_id)
+    )
     organizer = organizer_result.scalar_one_or_none()
     if organizer is None:
         return False

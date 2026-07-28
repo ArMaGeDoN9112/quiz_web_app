@@ -8,6 +8,8 @@ import { ParticleField } from '../components/ParticleField'
 import { useAuth } from '../context/AuthContext'
 import type { OrganizerSessionHistory, ParticipantSessionHistory, Quiz } from '../types/api'
 
+const PAGE_SIZE = 20
+
 export function DashboardPage() {
   const { user, loading, updateProfile } = useAuth()
   const navigate = useNavigate()
@@ -22,6 +24,10 @@ export function DashboardPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [launchingId, setLaunchingId] = useState<string | null>(null)
+  const [hasMoreQuizzes, setHasMoreQuizzes] = useState(false)
+  const [hasMoreParticipantHistory, setHasMoreParticipantHistory] = useState(false)
+  const [hasMoreOrganizerHistory, setHasMoreOrganizerHistory] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
     if (!loading && !user) navigate('/login')
@@ -30,17 +36,50 @@ export function DashboardPage() {
   useEffect(() => {
     if (!user) return
     if (user.role === 'organizer') {
-      Promise.all([api.listQuizzes(), api.getOrganizerSessionHistory()])
+      Promise.all([
+        api.listQuizzes({ limit: PAGE_SIZE }),
+        api.getOrganizerSessionHistory({ limit: PAGE_SIZE }),
+      ])
         .then(([nextQuizzes, history]) => {
           setQuizzes(nextQuizzes)
           setOrganizerHistory(history)
+          setHasMoreQuizzes(nextQuizzes.length === PAGE_SIZE)
+          setHasMoreOrganizerHistory(history.length === PAGE_SIZE)
         })
         .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load dashboard'))
       return
     }
-    api.getParticipantSessionHistory().then(setParticipantHistory)
+    api.getParticipantSessionHistory({ limit: PAGE_SIZE })
+      .then((history) => {
+        setParticipantHistory(history)
+        setHasMoreParticipantHistory(history.length === PAGE_SIZE)
+      })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load history'))
   }, [user])
+
+  const loadMore = async (kind: 'quizzes' | 'participantHistory' | 'organizerHistory') => {
+    setLoadingMore(true)
+    setError('')
+    try {
+      if (kind === 'quizzes') {
+        const page = await api.listQuizzes({ limit: PAGE_SIZE, offset: quizzes.length })
+        setQuizzes((current) => [...current, ...page])
+        setHasMoreQuizzes(page.length === PAGE_SIZE)
+      } else if (kind === 'participantHistory') {
+        const page = await api.getParticipantSessionHistory({ limit: PAGE_SIZE, offset: participantHistory.length })
+        setParticipantHistory((current) => [...current, ...page])
+        setHasMoreParticipantHistory(page.length === PAGE_SIZE)
+      } else {
+        const page = await api.getOrganizerSessionHistory({ limit: PAGE_SIZE, offset: organizerHistory.length })
+        setOrganizerHistory((current) => [...current, ...page])
+        setHasMoreOrganizerHistory(page.length === PAGE_SIZE)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load more results')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -128,6 +167,7 @@ export function DashboardPage() {
                 ))}
               </ul>
             )}
+            {hasMoreParticipantHistory && <button type="button" onClick={() => void loadMore('participantHistory')} disabled={loadingMore} className="btn-ghost mt-4">{loadingMore ? 'Loading…' : 'Load more'}</button>}
           </GlassPanel>
           <Link to="/join" className="btn-primary mt-8 inline-block">Join a room</Link>
         </section>
@@ -143,9 +183,9 @@ export function DashboardPage() {
         {error && <p className="error-text mb-4">{error}</p>}
         <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr]">
           <GlassPanel glow="aurora"><h2 className="font-display text-lg">New quiz</h2><form onSubmit={handleCreate} className="mt-6 space-y-4"><label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="Neural networks 101" /></label><label className="field"><span>Description</span><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Optional briefing for your team" /></label><button type="submit" disabled={busy} className="btn-primary w-full">{busy ? 'Creating…' : 'Create quiz'}</button></form></GlassPanel>
-          <GlassPanel glow="violet"><div className="mb-6 flex items-center justify-between"><h2 className="font-display text-lg">Your quizzes</h2><span className="font-body text-xs text-muted">{quizzes.length} total</span></div>{quizzes.length === 0 ? <p className="font-body text-sm text-muted">No quizzes yet. Create your first one to launch a live room.</p> : <ul className="space-y-4">{quizzes.map((quiz) => <li key={quiz.id} className="rounded-xl border border-white/8 bg-void/50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-body font-medium text-foreground">{quiz.title}</h3>{quiz.description && <p className="mt-1 font-body text-sm text-muted">{quiz.description}</p>}<p className="mt-2 font-body text-xs uppercase tracking-wider text-muted">{quiz.status} · {quiz.settings.time_limit_seconds}s per question</p></div><div className="flex gap-2"><Link to={`/quizzes/${quiz.id}`} className="btn-ghost text-xs">Edit</Link><button type="button" onClick={() => handleLaunch(quiz.id)} disabled={launchingId === quiz.id} className="btn-primary text-xs">{launchingId === quiz.id ? 'Launching…' : 'Launch live'}</button><button type="button" onClick={() => handleDelete(quiz.id)} className="btn-ghost text-xs text-plasma">Delete</button></div></div></li>)}</ul>}</GlassPanel>
+          <GlassPanel glow="violet"><div className="mb-6 flex items-center justify-between"><h2 className="font-display text-lg">Your quizzes</h2><span className="font-body text-xs text-muted">{quizzes.length} loaded</span></div>{quizzes.length === 0 ? <p className="font-body text-sm text-muted">No quizzes yet. Create your first one to launch a live room.</p> : <ul className="space-y-4">{quizzes.map((quiz) => <li key={quiz.id} className="rounded-xl border border-white/8 bg-void/50 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-body font-medium text-foreground">{quiz.title}</h3>{quiz.description && <p className="mt-1 font-body text-sm text-muted">{quiz.description}</p>}<p className="mt-2 font-body text-xs uppercase tracking-wider text-muted">{quiz.status} · {quiz.settings.time_limit_seconds}s per question</p></div><div className="flex gap-2"><Link to={`/quizzes/${quiz.id}`} className="btn-ghost text-xs">Edit</Link><button type="button" onClick={() => handleLaunch(quiz.id)} disabled={launchingId === quiz.id} className="btn-primary text-xs">{launchingId === quiz.id ? 'Launching…' : 'Launch live'}</button><button type="button" onClick={() => handleDelete(quiz.id)} className="btn-ghost text-xs text-plasma">Delete</button></div></div></li>)}</ul>}{hasMoreQuizzes && <button type="button" onClick={() => void loadMore('quizzes')} disabled={loadingMore} className="btn-ghost mt-4">{loadingMore ? 'Loading…' : 'Load more'}</button>}</GlassPanel>
         </div>
-        <GlassPanel glow="aurora" className="mt-8"><h2 className="font-display text-lg">Conducted sessions</h2>{organizerHistory.length === 0 ? <p className="mt-4 font-body text-sm text-muted">No finished sessions yet.</p> : <ul className="mt-4 space-y-3">{organizerHistory.map((item) => <li key={item.session_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"><div><p className="font-body text-foreground">{item.quiz_title}</p><p className="mt-1 font-body text-xs text-muted">{new Date(item.ended_at).toLocaleString()} · {item.participant_count} participants · winners: {item.winner_names.join(', ') || 'none'}</p></div><Link className="btn-ghost text-xs" to={`/sessions/${item.session_id}/result`}>Results</Link></li>)}</ul>}</GlassPanel>
+        <GlassPanel glow="aurora" className="mt-8"><h2 className="font-display text-lg">Conducted sessions</h2>{organizerHistory.length === 0 ? <p className="mt-4 font-body text-sm text-muted">No finished sessions yet.</p> : <ul className="mt-4 space-y-3">{organizerHistory.map((item) => <li key={item.session_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"><div><p className="font-body text-foreground">{item.quiz_title}</p><p className="mt-1 font-body text-xs text-muted">{new Date(item.ended_at).toLocaleString()} · {item.participant_count} participants · winners: {item.winner_names.join(', ') || 'none'}</p></div><Link className="btn-ghost text-xs" to={`/sessions/${item.session_id}/result`}>Results</Link></li>)}</ul>}{hasMoreOrganizerHistory && <button type="button" onClick={() => void loadMore('organizerHistory')} disabled={loadingMore} className="btn-ghost mt-4">{loadingMore ? 'Loading…' : 'Load more'}</button>}</GlassPanel>
       </section>
     </AppShell>
   )

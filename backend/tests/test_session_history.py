@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -7,6 +8,11 @@ from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
 from app.models import Quiz, QuizSession, SessionParticipant, SessionStatus, User, UserRole
+from app.services.session import (
+    SessionHistoryDataError,
+    get_organizer_session_history,
+    get_participant_session_history,
+)
 
 
 class FakeScalarResult:
@@ -28,8 +34,10 @@ class FakeRowsResult:
 class FakeSession:
     def __init__(self, results: list[object]) -> None:
         self.results = results
+        self.statements: list[object] = []
 
     async def execute(self, statement: object) -> object:
+        self.statements.append(statement)
         return self.results.pop(0)
 
 
@@ -141,6 +149,42 @@ def test_participant_history_returns_only_current_user_ended_sessions() -> None:
     ]
 
 
+def test_participant_history_service_applies_limit_and_offset() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    participant = _user("participant@example.com", UserRole.PARTICIPANT)
+    fake_session = FakeSession([FakeRowsResult([])])
+
+    history = asyncio.run(
+        get_participant_session_history(fake_session, participant, limit=5, offset=10)
+    )
+
+    assert history == []
+    statement_params = fake_session.statements[0].compile().params
+    assert statement_params["user_id_1"] == participant.id
+    assert 5 in statement_params.values()
+    assert 10 in statement_params.values()
+    assert "ended_at IS NOT NULL" in str(fake_session.statements[0])
+
+
+def test_participant_history_rejects_corrupted_final_results() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    participant = _user("participant@example.com", UserRole.PARTICIPANT)
+    quiz_session = _session(organizer)
+    quiz = _quiz(quiz_session)
+    session_participant = _participant(quiz_session, participant)
+    quiz_session.final_results = {"entries": [], "winner_ids": []}
+    fake_session = FakeSession(
+        [FakeRowsResult([(session_participant, quiz_session, quiz)])]
+    )
+
+    try:
+        asyncio.run(get_participant_session_history(fake_session, participant))
+    except SessionHistoryDataError:
+        pass
+    else:
+        raise AssertionError("Expected SessionHistoryDataError")
+
+
 def test_organizer_history_returns_conducted_session_winners() -> None:
     organizer = _user("organizer@example.com", UserRole.ORGANIZER)
     quiz_session = _session(organizer)
@@ -162,6 +206,22 @@ def test_organizer_history_returns_conducted_session_winners() -> None:
     assert response.status_code == 200
     assert response.json()[0]["participant_count"] == 2
     assert response.json()[0]["winner_names"] == ["Ada"]
+
+
+def test_organizer_history_service_applies_limit_and_offset() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    fake_session = FakeSession([FakeRowsResult([])])
+
+    history = asyncio.run(
+        get_organizer_session_history(fake_session, organizer, limit=5, offset=10)
+    )
+
+    assert history == []
+    statement_params = fake_session.statements[0].compile().params
+    assert statement_params["organizer_id_1"] == organizer.id
+    assert 5 in statement_params.values()
+    assert 10 in statement_params.values()
+    assert "ended_at IS NOT NULL" in str(fake_session.statements[0])
 
 
 def test_result_detail_allows_organizer_or_session_participant_only() -> None:

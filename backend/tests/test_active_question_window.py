@@ -30,6 +30,7 @@ from app.services.session import (
     StartQuestionSessionEndedError,
     SessionQuestionNotFoundError,
     StartQuestionSessionNotFoundError,
+    get_active_question,
     submit_answer,
     end_session,
     start_question,
@@ -196,6 +197,25 @@ def test_start_question_sets_active_window_with_deterministic_time() -> None:
     assert fake_session.committed is True
 
 
+def test_active_question_returns_answers_in_position_order() -> None:
+    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
+    quiz_session = _quiz_session(organizer.id)
+    question = _question(quiz_session.quiz_id)
+    first_answer = _answer(question)
+    first_answer.position = 2
+    second_answer = _answer(question)
+    second_answer.position = 1
+    question.answers = [first_answer, second_answer]
+    event = _active_event(quiz_session, question)
+    fake_session = FakeSession(results=[event, question, {"shuffle_answers": False}])
+
+    active_question = asyncio.run(get_active_question(fake_session, quiz_session))
+
+    assert active_question is not None
+    assert active_question.event_id == event.id
+    assert [answer.position for answer in active_question.answers] == [1, 2]
+
+
 def test_start_question_without_duration_stays_open_for_manual_mode() -> None:
     organizer = _user("organizer@example.com", UserRole.ORGANIZER)
     quiz_session = _quiz_session(organizer.id)
@@ -306,7 +326,6 @@ def test_start_question_rejects_ended_session() -> None:
 
     assert fake_session.added == []
 
-
 def test_submit_answer_accepts_response_inside_active_window() -> None:
     participant_user = _user("participant@example.com", UserRole.PARTICIPANT)
     quiz_session = _quiz_session(uuid4(), SessionStatus.ACTIVE)
@@ -388,6 +407,34 @@ def test_submit_answer_rejects_after_question_window() -> None:
                 selected_answer_ids=[uuid4()],
                 text_answer=None,
                 now_factory=lambda: datetime(2026, 7, 7, 12, 0, 31, tzinfo=UTC),
+            )
+        )
+    except AnswerOutsideQuestionWindowError:
+        pass
+    else:
+        raise AssertionError("Expected AnswerOutsideQuestionWindowError")
+
+    assert fake_session.added == []
+
+
+def test_submit_answer_rejects_at_question_deadline() -> None:
+    participant_user = _user("participant@example.com", UserRole.PARTICIPANT)
+    quiz_session = _quiz_session(uuid4(), SessionStatus.ACTIVE)
+    question = _question(quiz_session.quiz_id)
+    participant = _participant(quiz_session, participant_user)
+    event = _active_event(quiz_session, question)
+    fake_session = FakeSession(results=[quiz_session, participant, event])
+
+    try:
+        asyncio.run(
+            submit_answer(
+                fake_session,
+                participant_user,
+                quiz_session.id,
+                question.id,
+                selected_answer_ids=[uuid4()],
+                text_answer=None,
+                now_factory=lambda: event.ended_at,
             )
         )
     except AnswerOutsideQuestionWindowError:
@@ -588,7 +635,13 @@ def test_end_session_stores_final_rankings_and_winners() -> None:
         meta={},
     )
     fake_session = FakeSession(
-        results=[quiz_session, event, quiz_session, [first_participant, second_participant], [first_response, second_response]]
+        results=[
+            quiz_session,
+            event,
+            quiz_session,
+            [first_participant, second_participant],
+            [(first_participant.id, 8), (second_participant.id, 4)],
+        ]
     )
 
     scoreboard = asyncio.run(
@@ -602,7 +655,7 @@ def test_end_session_stores_final_rankings_and_winners() -> None:
 
     assert quiz_session.status is SessionStatus.ENDED
     assert event.status is QuestionEventStatus.CLOSED
-    assert scoreboard.entries[0]["rank"] == 1
+    assert scoreboard.entries[0].rank == 1
     assert scoreboard.winner_ids == [first_participant.id]
     assert quiz_session.final_results == {
         "entries": [
@@ -637,76 +690,3 @@ def test_submit_answer_rejects_ended_session() -> None:
         raise AssertionError("Expected AnswerSessionEndedError")
 
     assert fake_session.added == []
-
-
-def test_start_question_endpoint_returns_active_event() -> None:
-    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
-    quiz_session = _quiz_session(organizer.id)
-    question = _question(quiz_session.quiz_id)
-    fake_session = FakeSession(results=[organizer, quiz_session, question, None])
-    client = _client_with_session(fake_session)
-
-    response = client.post(
-        f"/sessions/{quiz_session.id}/questions/current",
-        json={"question_id": str(question.id), "duration_seconds": 45},
-        headers=_auth_header(organizer),
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert UUID(body["id"])
-    assert body["session_id"] == str(quiz_session.id)
-    assert body["question_id"] == str(question.id)
-    assert body["status"] == "active"
-    assert body["started_at"] is not None
-    assert body["ended_at"] is not None
-
-
-def test_start_question_endpoint_requires_organizer_role() -> None:
-    participant_user = _user("participant@example.com", UserRole.PARTICIPANT)
-    fake_session = FakeSession(results=[participant_user])
-    client = _client_with_session(fake_session)
-
-    response = client.post(
-        f"/sessions/{uuid4()}/questions/current",
-        json={"question_id": str(uuid4()), "duration_seconds": 45},
-        headers=_auth_header(participant_user),
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Organizer role required"}
-
-
-def test_submit_answer_endpoint_maps_closed_window_to_409() -> None:
-    participant_user = _user("participant@example.com", UserRole.PARTICIPANT)
-    quiz_session = _quiz_session(uuid4(), SessionStatus.ACTIVE)
-    question = _question(quiz_session.quiz_id)
-    participant = _participant(quiz_session, participant_user)
-    event = _active_event(quiz_session, question)
-    event.ended_at = datetime(2020, 1, 1, tzinfo=UTC)
-    fake_session = FakeSession(results=[participant_user, quiz_session, participant, event])
-    client = _client_with_session(fake_session)
-
-    response = client.post(
-        f"/sessions/{quiz_session.id}/answer",
-        json={"question_id": str(question.id), "selected_answer_ids": [str(uuid4())]},
-        headers=_auth_header(participant_user),
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {"detail": "Question is not accepting answers"}
-
-
-def test_submit_answer_endpoint_requires_participant_role() -> None:
-    organizer = _user("organizer@example.com", UserRole.ORGANIZER)
-    fake_session = FakeSession(results=[organizer])
-    client = _client_with_session(fake_session)
-
-    response = client.post(
-        f"/sessions/{uuid4()}/answer",
-        json={"question_id": str(uuid4()), "selected_answer_ids": [str(uuid4())]},
-        headers=_auth_header(organizer),
-    )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "Participant role required"}

@@ -1,9 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import ChoiceMode, QuestionEventStatus, QuestionType, SessionStatus
+from app.models import ChoiceMode, QuestionType, SessionStatus
+
+
+class _OrmResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SessionLaunchRequest(BaseModel):
@@ -21,7 +26,8 @@ class SessionJoinRequest(BaseModel):
             raise ValueError("Room code is required")
         return normalized
 
-class SessionResponse(BaseModel):
+
+class SessionResponse(_OrmResponse):
     id: uuid.UUID
     quiz_id: uuid.UUID
     organizer_id: uuid.UUID
@@ -31,47 +37,27 @@ class SessionResponse(BaseModel):
     updated_at: datetime
     ended_at: datetime | None
 
-    model_config = ConfigDict(from_attributes=True)
 
-
-class SessionParticipantResponse(BaseModel):
+class SessionParticipantResponse(_OrmResponse):
     id: uuid.UUID
     session_id: uuid.UUID
     user_id: uuid.UUID
     display_name: str
     joined_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
 
-
-class SessionContextResponse(BaseModel):
+class SessionContextResponse(_OrmResponse):
     session: SessionResponse
     participant: SessionParticipantResponse | None
 
 
-class StartQuestionRequest(BaseModel):
-    question_id: uuid.UUID
-    duration_seconds: int | None = Field(default=None, ge=1, le=3600)
-
-
-class QuestionEventResponse(BaseModel):
-    id: uuid.UUID
-    session_id: uuid.UUID
-    question_id: uuid.UUID
-    status: QuestionEventStatus
-    started_at: datetime | None
-    ended_at: datetime | None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PublicAnswerResponse(BaseModel):
+class PublicAnswerResponse(_OrmResponse):
     id: uuid.UUID
     text: str
     position: int
 
 
-class CurrentQuestionResponse(BaseModel):
+class CurrentQuestionResponse(_OrmResponse):
     event_id: uuid.UUID
     session_id: uuid.UUID
     question_id: uuid.UUID
@@ -84,7 +70,37 @@ class CurrentQuestionResponse(BaseModel):
     answers: list[PublicAnswerResponse]
 
 
-class SubmitAnswerRequest(BaseModel):
+class ScoreboardEntryResponse(_OrmResponse):
+    participant_id: uuid.UUID
+    display_name: str
+    score: int
+    rank: int
+
+
+class SessionScoreboardResponse(_OrmResponse):
+    session_id: uuid.UUID
+    status: SessionStatus
+    entries: list[ScoreboardEntryResponse]
+    winner_ids: list[uuid.UUID]
+
+
+class SessionLiveUpdateResponse(BaseModel):
+    scoreboard: SessionScoreboardResponse
+    current_question: CurrentQuestionResponse | None
+
+
+class WebSocketCommand(BaseModel):
+    request_id: uuid.UUID
+
+
+class StartQuestionCommand(WebSocketCommand):
+    type: Literal["question.start"]
+    question_id: uuid.UUID
+    duration_seconds: int | None = Field(default=None, ge=1, le=3600)
+
+
+class SubmitAnswerCommand(WebSocketCommand):
+    type: Literal["answer.submit"]
     question_id: uuid.UUID
     selected_answer_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
     text_answer: str | None = Field(default=None, max_length=2000)
@@ -100,33 +116,11 @@ class SubmitAnswerRequest(BaseModel):
         return normalized
 
 
-class QuestionAnswerResponse(BaseModel):
-    id: uuid.UUID
-    participant_id: uuid.UUID
-    question_event_id: uuid.UUID
-    selected_answer_ids: list[str]
-    text_answer: str | None
-    awarded_points: int
-    submitted_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+class EndSessionCommand(WebSocketCommand):
+    type: Literal["session.end"]
 
 
-class ScoreboardEntryResponse(BaseModel):
-    participant_id: uuid.UUID
-    display_name: str
-    score: int
-    rank: int
-
-
-class SessionScoreboardResponse(BaseModel):
-    session_id: uuid.UUID
-    status: SessionStatus
-    entries: list[ScoreboardEntryResponse]
-    winner_ids: list[uuid.UUID]
-
-
-class ParticipantSessionHistoryResponse(BaseModel):
+class ParticipantSessionHistoryResponse(_OrmResponse):
     session_id: uuid.UUID
     quiz_id: uuid.UUID
     quiz_title: str
@@ -136,7 +130,7 @@ class ParticipantSessionHistoryResponse(BaseModel):
     participant_count: int
 
 
-class OrganizerSessionHistoryResponse(BaseModel):
+class OrganizerSessionHistoryResponse(_OrmResponse):
     session_id: uuid.UUID
     quiz_id: uuid.UUID
     quiz_title: str
@@ -145,7 +139,7 @@ class OrganizerSessionHistoryResponse(BaseModel):
     winner_names: list[str]
 
 
-class SessionResultResponse(BaseModel):
+class SessionResultResponse(_OrmResponse):
     session_id: uuid.UUID
     quiz_id: uuid.UUID
     quiz_title: str

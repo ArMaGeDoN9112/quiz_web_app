@@ -14,7 +14,6 @@ import {
   type QuestionField,
   type QuestionFormErrors,
 } from '../features/questionAuthoring'
-import { buildQuizOrderSettingsUpdate } from '../features/quizSettings'
 import type { ChoiceMode, PlaybackMode, Question, QuestionType, Quiz } from '../types/api'
 
 let answerIndex = 0
@@ -108,7 +107,7 @@ export function QuizEditorPage() {
 
     setLoadingEditor(true)
     setPageError('')
-    Promise.all([api.getQuiz(quizId), api.listQuestions(quizId)])
+    Promise.all([api.getQuiz(quizId), api.listAllQuestions(quizId)])
       .then(([loadedQuiz, loadedQuestions]) => {
         setQuiz(loadedQuiz)
         setQuestions(loadedQuestions)
@@ -229,7 +228,7 @@ export function QuizEditorPage() {
     try {
       setQuiz(await api.updateQuizOrderSettings(
         quizId,
-        buildQuizOrderSettingsUpdate(shuffleQuestions, shuffleAnswers),
+        { shuffle_questions: shuffleQuestions, shuffle_answers: shuffleAnswers },
       ))
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Could not save question order settings')
@@ -258,7 +257,7 @@ export function QuizEditorPage() {
       } else {
         await api.createQuestion(quizId, buildQuestionPayload(draft))
       }
-      setQuestions(await api.listQuestions(quizId))
+      setQuestions(await api.listAllQuestions(quizId))
       setDraft(createInitialDraft())
       setEditingQuestionId(null)
       setErrors({})

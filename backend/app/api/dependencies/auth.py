@@ -1,20 +1,23 @@
 from uuid import UUID
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_access_token
-from app.db.session import get_db_session
+from app.db.session import SessionDep
 from app.models import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=False)
+BearerCredentialsDep = Annotated[
+    HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+]
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    session: AsyncSession = Depends(get_db_session),
+    credentials: BearerCredentialsDep,
+    session: SessionDep,
 ) -> User:
     if credentials is None:
         raise HTTPException(
@@ -48,8 +51,11 @@ async def get_current_user(
     return user
 
 
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
 async def require_organizer(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUserDep,
 ) -> User:
     if current_user.role is not UserRole.ORGANIZER:
         raise HTTPException(
@@ -59,8 +65,11 @@ async def require_organizer(
     return current_user
 
 
+OrganizerUserDep = Annotated[User, Depends(require_organizer)]
+
+
 async def require_participant(
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUserDep,
 ) -> User:
     if current_user.role is not UserRole.PARTICIPANT:
         raise HTTPException(
@@ -68,3 +77,6 @@ async def require_participant(
             detail="Participant role required",
         )
     return current_user
+
+
+ParticipantUserDep = Annotated[User, Depends(require_participant)]

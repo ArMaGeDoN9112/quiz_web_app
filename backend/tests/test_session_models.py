@@ -1,14 +1,77 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from sqlalchemy import ForeignKeyConstraint, UniqueConstraint
 
 from app.db.base import Base
 from app.models import (
+    ChoiceMode,
     QuestionEvent,
     QuestionEventStatus,
     QuestionResponse,
+    QuestionType,
     QuizSession,
     SessionParticipant,
     SessionStatus,
 )
+from app.schemas.session import SessionLiveUpdateResponse
+from app.services.scoring import RankedScore
+from app.services.session import (
+    ActiveQuestion,
+    ActiveQuestionAnswer,
+    QuizSessionError,
+    SessionQuizNotFoundError,
+    SessionScoreboard,
+)
+
+
+def test_session_domain_errors_share_a_base_class() -> None:
+    assert issubclass(SessionQuizNotFoundError, QuizSessionError)
+
+
+def test_live_update_schema_accepts_session_service_results() -> None:
+    session_id = uuid4()
+    participant_id = uuid4()
+    scoreboard = SessionScoreboard(
+        session_id=session_id,
+        status=SessionStatus.ACTIVE,
+        entries=[
+            RankedScore(
+                participant_id=participant_id,
+                display_name="Ada",
+                score=10,
+                rank=1,
+            )
+        ],
+        winner_ids=[participant_id],
+    )
+    question_id = uuid4()
+    current_question = ActiveQuestion(
+        event_id=uuid4(),
+        session_id=session_id,
+        question_id=question_id,
+        type=QuestionType.TEXT,
+        choice_mode=ChoiceMode.SINGLE,
+        text="Question?",
+        image_url=None,
+        ends_at=datetime(2026, 7, 7, 12, 0, 30, tzinfo=UTC),
+        shuffle_answers=False,
+        answers=[ActiveQuestionAnswer(id=uuid4(), text="Answer", position=1)],
+    )
+
+    update = SessionLiveUpdateResponse.model_validate(
+        {"scoreboard": scoreboard, "current_question": current_question}
+    )
+
+    assert update.scoreboard.entries[0].participant_id == participant_id
+    assert update.current_question is not None
+    assert update.current_question.question_id == question_id
+
+
+def test_session_timestamps_are_timezone_aware() -> None:
+    assert QuizSession.__table__.c.ended_at.type.timezone is True
+    assert QuestionEvent.__table__.c.started_at.type.timezone is True
+    assert QuestionEvent.__table__.c.ended_at.type.timezone is True
 
 
 def test_session_models_are_registered_with_metadata() -> None:

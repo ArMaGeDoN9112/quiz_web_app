@@ -6,10 +6,9 @@ import { GlassPanel } from '../components/GlassPanel'
 import { ParticleField } from '../components/ParticleField'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { hasSessionEnded } from '../features/sessionLifecycle'
 import { orderQuizItems } from '../features/quizSettings'
 import { useLiveScoreboard } from '../features/useLiveScoreboard'
-import type { CurrentQuestion, SessionParticipant, SessionScoreboard } from '../types/api'
+import type { CurrentQuestion, SessionLiveUpdate, SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function ParticipantRoomPage() {
   const { sessionId } = useParams()
@@ -50,40 +49,22 @@ export function ParticipantRoomPage() {
     return () => { active = false }
   }, [loading, navigate, sessionId, user])
 
-  const handleScoreboard = useCallback((nextScoreboard: SessionScoreboard) => {
-    setScoreboard(nextScoreboard)
-    if (hasSessionEnded(nextScoreboard)) navigate('/', { replace: true })
+  const handleSessionUpdate = useCallback((update: SessionLiveUpdate) => {
+    setScoreboard(update.scoreboard)
+    setCurrentQuestion((current) => (
+      current?.event_id === update.current_question?.event_id
+        ? current
+        : update.current_question === null
+          ? null
+          : {
+              ...update.current_question,
+              answers: orderQuizItems(update.current_question.answers, update.current_question.shuffle_answers),
+            }
+    ))
+    if (update.scoreboard.status === 'ended') navigate('/', { replace: true })
   }, [navigate])
 
-  useLiveScoreboard(sessionId, roomCode ?? undefined, handleScoreboard)
-
-  useEffect(() => {
-    if (!sessionId || !participant) return
-    let active = true
-    const loadRoom = async () => {
-      try {
-        const nextQuestion = await api.getCurrentQuestion(sessionId)
-        if (active) {
-          setCurrentQuestion((current) => (
-            current?.event_id === nextQuestion.event_id
-              ? current
-              : {
-                  ...nextQuestion,
-                  answers: orderQuizItems(nextQuestion.answers, nextQuestion.shuffle_answers),
-                }
-          ))
-        }
-      } catch {
-        if (active) setCurrentQuestion(null)
-      }
-    }
-    void loadRoom()
-    const interval = window.setInterval(loadRoom, 2000)
-    return () => {
-      active = false
-      window.clearInterval(interval)
-    }
-  }, [navigate, participant, sessionId])
+  const { sendCommand } = useLiveScoreboard(sessionId, roomCode ?? undefined, handleSessionUpdate)
 
   useEffect(() => {
     setSelectedAnswerIds([])
@@ -107,9 +88,13 @@ export function ParticipantRoomPage() {
     setSubmitting(true)
     setAnswerMessage('')
     try {
-      const response = await api.submitAnswer(sessionId, currentQuestion.question_id, selectedAnswerIds)
+      await sendCommand({
+        type: 'answer.submit',
+        question_id: currentQuestion.question_id,
+        selected_answer_ids: selectedAnswerIds,
+      })
       setSubmittedEventId(currentQuestion.event_id)
-      setAnswerMessage(`Answer saved: ${response.awarded_points} pts`)
+      setAnswerMessage('Answer saved')
     } catch (error) {
       setAnswerMessage(error instanceof Error ? error.message : 'Could not submit answer')
     } finally {

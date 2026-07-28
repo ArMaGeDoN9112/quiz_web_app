@@ -9,31 +9,25 @@ from app.models import UserRole
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-class RegisterRequest(BaseModel):
+class _EmailRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(normalized):
+            raise ValueError("Invalid email address")
+        return normalized
+
+
+class RegisterRequest(_EmailRequest):
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
 
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if not EMAIL_PATTERN.fullmatch(normalized):
-            raise ValueError("Invalid email address")
-        return normalized
 
-
-class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+class LoginRequest(_EmailRequest):
     password: str = Field(min_length=8, max_length=128)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if not EMAIL_PATTERN.fullmatch(normalized):
-            raise ValueError("Invalid email address")
-        return normalized
 
 
 class TokenResponse(BaseModel):

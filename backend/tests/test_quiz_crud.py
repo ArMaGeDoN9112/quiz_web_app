@@ -10,7 +10,8 @@ from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
 from app.models import Answer, ChoiceMode, Question, QuestionType, Quiz, QuizStatus, User, UserRole
-from app.services.quiz import list_questions, list_quizzes
+from app.schemas.quiz import QuestionCreateRequest
+from app.services.quiz import create_question, list_questions, list_quizzes
 
 
 DEFAULT_SETTINGS = {
@@ -21,6 +22,15 @@ DEFAULT_SETTINGS = {
     "show_correct_answers": True,
     "scoring_mode": "standard",
 }
+
+
+class ConstraintError(Exception):
+    def __init__(self, constraint_name: str) -> None:
+        self.constraint_name = constraint_name
+
+
+def _integrity_error(constraint_name: str) -> IntegrityError:
+    return IntegrityError("database write", {}, ConstraintError(constraint_name))
 
 
 class FakeScalarResult:
@@ -199,7 +209,7 @@ def test_organizer_lists_only_own_quizzes() -> None:
     fake_session = FakeSession(results=[organizer, [quiz]])
     client = _client_with_session(fake_session)
 
-    response = client.get("/quizzes", headers=_auth_header(organizer))
+    response = client.get("/quizzes?limit=2&offset=3", headers=_auth_header(organizer))
 
     assert response.status_code == 200
     assert response.json() == [
@@ -215,7 +225,11 @@ def test_organizer_lists_only_own_quizzes() -> None:
         }
     ]
     assert len(fake_session.statements) == 2
-    assert fake_session.statements[1].compile().params == {"owner_id_1": organizer.id}
+    assert fake_session.statements[1].compile().params == {
+        "owner_id_1": organizer.id,
+        "param_1": 2,
+        "param_2": 3,
+    }
 
 
 def test_list_quizzes_service_returns_owner_quizzes_in_query_order() -> None:
@@ -227,7 +241,27 @@ def test_list_quizzes_service_returns_owner_quizzes_in_query_order() -> None:
     quizzes = asyncio.run(list_quizzes(fake_session, organizer))
 
     assert quizzes == [first_quiz, second_quiz]
-    assert fake_session.statements[0].compile().params == {"owner_id_1": organizer.id}
+    assert fake_session.statements[0].compile().params == {
+        "owner_id_1": organizer.id,
+        "param_1": 20,
+        "param_2": 0,
+    }
+    assert "ORDER BY quizzes.created_at DESC, quizzes.id" in str(
+        fake_session.statements[0]
+    )
+
+
+def test_list_quizzes_service_applies_limit_and_offset() -> None:
+    organizer = _user("organizer@example.com")
+    fake_session = FakeSession(results=[[]])
+
+    quizzes = asyncio.run(list_quizzes(fake_session, organizer, limit=2, offset=3))
+
+    assert quizzes == []
+    statement_params = fake_session.statements[0].compile().params
+    assert statement_params["owner_id_1"] == organizer.id
+    assert 2 in statement_params.values()
+    assert 3 in statement_params.values()
 
 
 def test_organizer_gets_own_quiz() -> None:
@@ -305,7 +339,11 @@ def test_organizer_lists_questions_for_own_quiz() -> None:
         "id_1": quiz.id,
         "owner_id_1": organizer.id,
     }
-    assert fake_session.statements[2].compile().params == {"quiz_id_1": quiz.id}
+    assert fake_session.statements[2].compile().params == {
+        "quiz_id_1": quiz.id,
+        "param_1": 20,
+        "param_2": 0,
+    }
 
 
 def test_list_questions_service_returns_owner_quiz_questions_in_query_order() -> None:
@@ -322,7 +360,27 @@ def test_list_questions_service_returns_owner_quiz_questions_in_query_order() ->
         "id_1": quiz.id,
         "owner_id_1": organizer.id,
     }
-    assert fake_session.statements[1].compile().params == {"quiz_id_1": quiz.id}
+    assert fake_session.statements[1].compile().params == {
+        "quiz_id_1": quiz.id,
+        "param_1": 20,
+        "param_2": 0,
+    }
+
+
+def test_list_questions_service_applies_limit_and_offset() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    fake_session = FakeSession(results=[quiz, []])
+
+    questions = asyncio.run(
+        list_questions(fake_session, organizer, quiz.id, limit=5, offset=10)
+    )
+
+    assert questions == []
+    statement_params = fake_session.statements[1].compile().params
+    assert statement_params["quiz_id_1"] == quiz.id
+    assert 5 in statement_params.values()
+    assert 10 in statement_params.values()
 
 
 def test_non_owner_cannot_list_questions() -> None:
@@ -1016,7 +1074,7 @@ def test_question_position_conflict_returns_409() -> None:
     quiz = _quiz(organizer.id)
     fake_session = FakeSession(
         results=[organizer, quiz, 0],
-        commit_error=IntegrityError("insert question", {}, Exception("unique conflict")),
+        commit_error=_integrity_error("uq_questions_quiz_id_position"),
     )
     client = _client_with_session(fake_session)
 
@@ -1036,4 +1094,31 @@ def test_question_position_conflict_returns_409() -> None:
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Question position conflict; retry request"}
+    assert fake_session.rolled_back is True
+
+
+def test_create_question_does_not_mask_unrelated_integrity_error() -> None:
+    organizer = _user("organizer@example.com")
+    quiz = _quiz(organizer.id)
+    database_error = _integrity_error("fk_answers_question_id_questions")
+    fake_session = FakeSession(
+        results=[quiz, 0],
+        commit_error=database_error,
+    )
+    request = QuestionCreateRequest.model_validate(
+        {
+            "type": "text",
+            "choice_mode": "single",
+            "text": "Capital of France?",
+            "answers": [
+                {"text": "Paris", "is_correct": True},
+                {"text": "Rome", "is_correct": False},
+            ],
+        }
+    )
+
+    with pytest.raises(IntegrityError) as raised:
+        asyncio.run(create_question(fake_session, organizer, quiz.id, request))
+
+    assert raised.value is database_error
     assert fake_session.rolled_back is True

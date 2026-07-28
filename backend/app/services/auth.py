@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password, verify_password
+from app.db.errors import integrity_constraint_name
 from app.models import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 
@@ -33,7 +34,9 @@ async def register_user(session: AsyncSession, data: RegisterRequest) -> User:
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
-        raise DuplicateEmailError from error
+        if integrity_constraint_name(error) == "uq_users_email":
+            raise DuplicateEmailError from error
+        raise
 
     await session.refresh(user)
     return user

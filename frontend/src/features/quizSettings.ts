@@ -1,15 +1,3 @@
-import type { QuizSettings } from '../types/api.js'
-
-export function buildQuizOrderSettingsUpdate(
-  shuffleQuestions: boolean,
-  shuffleAnswers: boolean,
-): Pick<QuizSettings, 'shuffle_questions' | 'shuffle_answers'> {
-  return {
-    shuffle_questions: shuffleQuestions,
-    shuffle_answers: shuffleAnswers,
-  }
-}
-
 export function orderQuizItems<T>(
   items: readonly T[],
   shouldShuffle: boolean,

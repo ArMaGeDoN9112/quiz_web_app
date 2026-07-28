@@ -1,11 +1,9 @@
 import type {
   ApiValidationIssue,
   Question,
-  CurrentQuestion,
-  QuestionAnswer,
   QuestionCreateRequest,
-  QuestionEvent,
   OrganizerSessionHistory,
+  PaginationParams,
   PlaybackMode,
   ParticipantSessionHistory,
   Quiz,
@@ -14,7 +12,6 @@ import type {
   SessionContext,
   SessionParticipant,
   SessionResult,
-  SessionScoreboard,
   TokenResponse,
   User,
   UserRole,
@@ -22,6 +19,12 @@ import type {
 import { createScoreboardWebSocketUrl } from '../features/liveScoreboard.js'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const MAX_PAGE_SIZE = 100
+
+function withPagination(path: string, { limit = 20, offset = 0 }: PaginationParams = {}): string {
+  const search = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return `${path}?${search.toString()}`
+}
 
 export class ApiRequestError extends Error {
   status: number
@@ -104,8 +107,8 @@ class ApiClient {
     return this.request<User>('/users/me')
   }
 
-  listQuizzes() {
-    return this.request<Quiz[]>('/quizzes')
+  listQuizzes(pagination?: PaginationParams) {
+    return this.request<Quiz[]>(withPagination('/quizzes', pagination))
   }
 
   getQuiz(quizId: string) {
@@ -140,8 +143,19 @@ class ApiClient {
     return this.request<void>(`/quizzes/${quizId}`, { method: 'DELETE' })
   }
 
-  listQuestions(quizId: string) {
-    return this.request<Question[]>(`/quizzes/${quizId}/questions`)
+  listQuestions(quizId: string, pagination?: PaginationParams) {
+    return this.request<Question[]>(
+      withPagination(`/quizzes/${quizId}/questions`, pagination),
+    )
+  }
+
+  async listAllQuestions(quizId: string) {
+    const questions: Question[] = []
+    for (let offset = 0; ; offset += MAX_PAGE_SIZE) {
+      const page = await this.listQuestions(quizId, { limit: MAX_PAGE_SIZE, offset })
+      questions.push(...page)
+      if (page.length < MAX_PAGE_SIZE) return questions
+    }
   }
 
   createQuestion(quizId: string, question: QuestionCreateRequest) {
@@ -183,42 +197,16 @@ class ApiClient {
     })
   }
 
-  startQuestion(sessionId: string, questionId: string, durationSeconds?: number) {
-    const body: { question_id: string; duration_seconds?: number } = { question_id: questionId }
-    if (durationSeconds !== undefined) body.duration_seconds = durationSeconds
-    return this.request<QuestionEvent>(`/sessions/${sessionId}/questions/current`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
+  getParticipantSessionHistory(pagination?: PaginationParams) {
+    return this.request<ParticipantSessionHistory[]>(
+      withPagination('/sessions/history/participated', pagination),
+    )
   }
 
-  getSessionScoreboard(sessionId: string) {
-    return this.request<SessionScoreboard>(`/sessions/${sessionId}/scoreboard`)
-  }
-
-  getCurrentQuestion(sessionId: string) {
-    return this.request<CurrentQuestion>(`/sessions/${sessionId}/questions/current`)
-  }
-
-  submitAnswer(sessionId: string, questionId: string, selectedAnswerIds: string[]) {
-    return this.request<QuestionAnswer>(`/sessions/${sessionId}/answer`, {
-      method: 'POST',
-      body: JSON.stringify({ question_id: questionId, selected_answer_ids: selectedAnswerIds }),
-    })
-  }
-
-  endSession(sessionId: string) {
-    return this.request<SessionScoreboard>(`/sessions/${sessionId}/end`, {
-      method: 'POST',
-    })
-  }
-
-  getParticipantSessionHistory() {
-    return this.request<ParticipantSessionHistory[]>('/sessions/history/participated')
-  }
-
-  getOrganizerSessionHistory() {
-    return this.request<OrganizerSessionHistory[]>('/sessions/history/conducted')
+  getOrganizerSessionHistory(pagination?: PaginationParams) {
+    return this.request<OrganizerSessionHistory[]>(
+      withPagination('/sessions/history/conducted', pagination),
+    )
   }
 
   getSessionResult(sessionId: string) {

@@ -16,8 +16,6 @@ from app.services.session import (
     AnswerParticipantNotFoundError,
     AnswerQuestionNotFoundError,
     AnswerSessionEndedError,
-    CurrentQuestionAccessError,
-    CurrentQuestionNotFoundError,
     DuplicateQuestionEventError,
     DuplicateQuestionResponseError,
     EndSessionNotFoundError,
@@ -94,8 +92,6 @@ EXCEPTION_HANDLERS: dict[type[Exception], ExceptionHandler] = {
     ActiveQuestionConflictError: _handler(
         status.HTTP_409_CONFLICT, "Active question conflict; retry request"
     ),
-    CurrentQuestionNotFoundError: _handler(status.HTTP_404_NOT_FOUND, "No active question"),
-    CurrentQuestionAccessError: _handler(status.HTTP_403_FORBIDDEN, "Session access denied"),
     AnswerParticipantNotFoundError: _handler(
         status.HTTP_404_NOT_FOUND, "Participant session not found"
     ),

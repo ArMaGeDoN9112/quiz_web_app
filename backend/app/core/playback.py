@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from app.core.live import broadcast_session_update
 from app.db.session import AsyncSessionLocal
 from app.models import QuestionEvent, QuestionEventStatus, QuizSession, SessionStatus
 from app.services.playback import advance_automatic_session
@@ -46,6 +47,7 @@ async def run_automatic_playback_once(
                 continue
             if advanced:
                 advanced_session_ids.append(session_id)
+                await broadcast_session_update(session_id)
     return advanced_session_ids
 
 

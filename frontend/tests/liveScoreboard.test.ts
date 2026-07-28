@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { createScoreboardWebSocketUrl, parseScoreboardUpdate } from '../src/features/liveScoreboard.js'
+import { createScoreboardWebSocketUrl, parseCommandResult, parseSessionUpdate } from '../src/features/liveScoreboard.js'
 
 const scoreboard = {
   session_id: 'session',
@@ -10,11 +10,18 @@ const scoreboard = {
 }
 
 assert.deepEqual(
-  parseScoreboardUpdate(JSON.stringify({ type: 'scoreboard.updated', scoreboard })),
-  scoreboard,
+  parseSessionUpdate(JSON.stringify({ type: 'session.updated', scoreboard, current_question: null })),
+  { scoreboard, current_question: null },
 )
-assert.equal(parseScoreboardUpdate(JSON.stringify({ type: 'unknown' })), null)
-assert.equal(parseScoreboardUpdate('not json'), null)
+assert.equal(parseSessionUpdate(JSON.stringify({ type: 'session.updated', scoreboard })), null)
+assert.deepEqual(
+  parseCommandResult(JSON.stringify({ type: 'command.accepted', request_id: 'request-1' })),
+  { request_id: 'request-1', detail: null },
+)
+assert.deepEqual(
+  parseCommandResult(JSON.stringify({ type: 'command.error', request_id: 'request-1', detail: 'Session is ended' })),
+  { request_id: 'request-1', detail: 'Session is ended' },
+)
 assert.equal(
   createScoreboardWebSocketUrl('https://quiz.example/api', 'AB C', 'token'),
   'wss://quiz.example/api/ws/sessions/AB%20C?token=token',
