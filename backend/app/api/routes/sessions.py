@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,31 +27,6 @@ from app.schemas.session import (
     SubmitAnswerRequest,
 )
 from app.services.session import (
-    ActiveQuestionConflictError,
-    AnswerOutsideQuestionWindowError,
-    AnswerParticipantNotFoundError,
-    AnswerQuestionNotFoundError,
-    AnswerSessionEndedError,
-    DuplicateQuestionEventError,
-    DuplicateQuestionResponseError,
-    CurrentQuestionAccessError,
-    CurrentQuestionNotFoundError,
-    EndSessionNotFoundError,
-    SessionResultAccessError,
-    SessionResultNotFoundError,
-    InvalidQuestionAnswerSelectionError,
-    QuestionNotInSessionQuizError,
-    ProfileDisplayNameRequiredError,
-    RoomCodeConflictError,
-    SessionScoreboardAccessError,
-    SessionScoreboardNotFoundError,
-    SessionContextAccessError,
-    SessionContextNotFoundError,
-    SessionQuestionNotFoundError,
-    SessionNotJoinableError,
-    SessionQuizNotFoundError,
-    StartQuestionSessionEndedError,
-    StartQuestionSessionNotFoundError,
     join_session,
     end_session,
     get_session_scoreboard,
@@ -99,12 +74,7 @@ async def session_context_endpoint(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionContextResponse:
-    try:
-        context = await get_session_context(session, current_user, session_id)
-    except SessionContextNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
-    except SessionContextAccessError as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session access denied") from error
+    context = await get_session_context(session, current_user, session_id)
     return SessionContextResponse(
         session=SessionResponse.model_validate(context.session),
         participant=(
@@ -121,15 +91,7 @@ async def session_result_endpoint(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionResultResponse:
-    try:
-        result = await get_session_result(session, current_user, session_id)
-    except SessionResultNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session result not found") from error
-    except SessionResultAccessError as error:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Session result access denied",
-        ) from error
+    result = await get_session_result(session, current_user, session_id)
     return SessionResultResponse.model_validate(result)
 
 
@@ -139,19 +101,7 @@ async def launch_session_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionResponse:
-    try:
-        quiz_session = await launch_session(session, current_user, request.quiz_id)
-    except SessionQuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
-    except RoomCodeConflictError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Room code conflict; retry request",
-        ) from error
-
+    quiz_session = await launch_session(session, current_user, request.quiz_id)
     return SessionResponse.model_validate(quiz_session)
 
 
@@ -165,23 +115,7 @@ async def join_session_endpoint(
     current_user: User = Depends(require_participant),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionParticipantResponse:
-    try:
-        participant = await join_session(
-            session,
-            current_user,
-            request.room_code,
-        )
-    except SessionNotJoinableError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session is not joinable",
-        ) from error
-    except ProfileDisplayNameRequiredError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Profile display name required",
-        ) from error
-
+    participant = await join_session(session, current_user, request.room_code)
     return SessionParticipantResponse.model_validate(participant)
 
 
@@ -195,45 +129,10 @@ async def start_question_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuestionEventResponse:
-    try:
-        question_event = await start_question(
-            session,
-            current_user,
-            session_id,
-            request.question_id,
-            duration_seconds=request.duration_seconds,
-        )
-    except StartQuestionSessionNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
-        ) from error
-    except StartQuestionSessionEndedError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Session is ended",
-        ) from error
-    except SessionQuestionNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Question not found",
-        ) from error
-    except QuestionNotInSessionQuizError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Question does not belong to session quiz",
-        ) from error
-    except DuplicateQuestionEventError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Question already used in session",
-        ) from error
-    except ActiveQuestionConflictError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Active question conflict; retry request",
-        ) from error
-
+    question_event = await start_question(
+        session, current_user, session_id, request.question_id,
+        duration_seconds=request.duration_seconds,
+    )
     return QuestionEventResponse.model_validate(question_event)
 
 
@@ -243,18 +142,7 @@ async def get_current_question_endpoint(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> CurrentQuestionResponse:
-    try:
-        question = await get_current_question(session, current_user, session_id)
-    except CurrentQuestionNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active question",
-        ) from error
-    except CurrentQuestionAccessError as error:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Session access denied",
-        ) from error
+    question = await get_current_question(session, current_user, session_id)
     return CurrentQuestionResponse.model_validate(question)
 
 
@@ -269,46 +157,10 @@ async def submit_answer_endpoint(
     current_user: User = Depends(require_participant),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuestionAnswerResponse:
-    try:
-        response = await submit_answer(
-            session,
-            current_user,
-            session_id,
-            request.question_id,
-            request.selected_answer_ids,
-            request.text_answer,
-        )
-    except AnswerParticipantNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participant session not found",
-        ) from error
-    except AnswerSessionEndedError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Session is ended",
-        ) from error
-    except AnswerQuestionNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Active question not found",
-        ) from error
-    except AnswerOutsideQuestionWindowError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Question is not accepting answers",
-        ) from error
-    except InvalidQuestionAnswerSelectionError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Invalid answer selection",
-        ) from error
-    except DuplicateQuestionResponseError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Question already answered",
-        ) from error
-
+    response = await submit_answer(
+        session, current_user, session_id, request.question_id,
+        request.selected_answer_ids, request.text_answer,
+    )
     answer_response = QuestionAnswerResponse.model_validate(response)
     scoreboard = await get_session_scoreboard(session, current_user, session_id)
     scoreboard_response = _scoreboard_response(scoreboard)
@@ -329,12 +181,7 @@ async def get_scoreboard_endpoint(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionScoreboardResponse:
-    try:
-        scoreboard = await get_session_scoreboard(session, current_user, session_id)
-    except SessionScoreboardNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
-    except SessionScoreboardAccessError as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session access denied") from error
+    scoreboard = await get_session_scoreboard(session, current_user, session_id)
     return _scoreboard_response(scoreboard)
 
 
@@ -344,10 +191,7 @@ async def end_session_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> SessionScoreboardResponse:
-    try:
-        scoreboard = await end_session(session, current_user, session_id)
-    except EndSessionNotFoundError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from error
+    scoreboard = await end_session(session, current_user, session_id)
     response = _scoreboard_response(scoreboard)
     await scoreboard_hub.broadcast(
         session_id,

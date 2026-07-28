@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +12,11 @@ from app.api.routes.sessions import router as sessions_router, websocket_router
 from app.api.routes.users import router as users_router
 from app.core.config import settings
 from app.core.playback import automatic_playback_loop
+from app.exceptions_handler import register_exception_handlers
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     stop_event = asyncio.Event()
     playback_task = asyncio.create_task(automatic_playback_loop(stop_event))
     try:
@@ -27,6 +28,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    register_exception_handlers(app)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

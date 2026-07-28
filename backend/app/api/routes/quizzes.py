@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import require_organizer
@@ -14,9 +14,6 @@ from app.schemas.quiz import (
     QuizUpdateRequest,
 )
 from app.services.quiz import (
-    QuestionPositionConflictError,
-    QuestionNotFoundError,
-    QuizNotFoundError,
     create_question,
     create_quiz,
     delete_quiz,
@@ -55,13 +52,7 @@ async def get_quiz_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuizResponse:
-    try:
-        quiz = await get_quiz(session, current_user, quiz_id)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
+    quiz = await get_quiz(session, current_user, quiz_id)
     return QuizResponse.model_validate(quiz)
 
 
@@ -72,13 +63,7 @@ async def update_quiz_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuizResponse:
-    try:
-        quiz = await update_quiz(session, current_user, quiz_id, request)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
+    quiz = await update_quiz(session, current_user, quiz_id, request)
     return QuizResponse.model_validate(quiz)
 
 
@@ -88,13 +73,7 @@ async def delete_quiz_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> Response:
-    try:
-        await delete_quiz(session, current_user, quiz_id)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
+    await delete_quiz(session, current_user, quiz_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -109,18 +88,7 @@ async def create_question_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuestionResponse:
-    try:
-        question = await create_question(session, current_user, quiz_id, request)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
-    except QuestionPositionConflictError as error:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Question position conflict; retry request",
-        ) from error
+    question = await create_question(session, current_user, quiz_id, request)
     return QuestionResponse.model_validate(question)
 
 
@@ -135,18 +103,7 @@ async def update_question_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> QuestionResponse:
-    try:
-        question = await update_question(session, current_user, quiz_id, question_id, request)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
-    except QuestionNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Question not found",
-        ) from error
+    question = await update_question(session, current_user, quiz_id, question_id, request)
     return QuestionResponse.model_validate(question)
 
 
@@ -156,11 +113,5 @@ async def list_questions_endpoint(
     current_user: User = Depends(require_organizer),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[QuestionResponse]:
-    try:
-        questions = await list_questions(session, current_user, quiz_id)
-    except QuizNotFoundError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quiz not found",
-        ) from error
+    questions = await list_questions(session, current_user, quiz_id)
     return [QuestionResponse.model_validate(question) for question in questions]

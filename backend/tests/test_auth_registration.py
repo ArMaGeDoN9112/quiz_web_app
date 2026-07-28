@@ -5,8 +5,13 @@ from fastapi.testclient import TestClient
 
 from app.core.security import verify_password
 from app.db.session import get_db_session
+from app.exceptions_handler import (
+    duplicate_email_exception_handler,
+    unhandled_exception_handler,
+)
 from app.main import create_app
 from app.models import User, UserRole
+from app.services.auth import DuplicateEmailError
 
 
 class FakeScalarResult:
@@ -120,3 +125,24 @@ def test_register_rejects_duplicate_email() -> None:
     assert response.status_code == 409
     assert response.json() == {"detail": "Email already registered"}
     assert fake_session.added_user is None
+
+
+def test_registers_duplicate_email_handler() -> None:
+    app = create_app()
+
+    assert app.exception_handlers[DuplicateEmailError] is duplicate_email_exception_handler
+
+
+def test_unhandled_exceptions_return_safe_error_response() -> None:
+    app = create_app()
+
+    @app.get("/_test/unhandled-error")
+    async def raise_unhandled_error() -> None:
+        raise RuntimeError("database connection details")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/_test/unhandled-error")
+
+    assert app.exception_handlers[Exception] is unhandled_exception_handler
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
