@@ -5,7 +5,12 @@ from uuid import UUID
 from fastapi import WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.core.live import broadcast_session_update, scoreboard_hub, session_update_payload
+from app.core.live import (
+    broadcast_session_participants,
+    broadcast_session_update,
+    scoreboard_hub,
+    session_update_payload,
+)
 from app.core.security import verify_access_token
 from app.db.session import AsyncSessionLocal
 from app.models import QuizSession, SessionParticipant, User
@@ -19,14 +24,16 @@ async def session_websocket_handler(websocket: WebSocket, room_code: str) -> Non
     if connection is None:
         return
 
-    user, session_id = connection
-    await scoreboard_hub.connect(session_id, websocket)
+    user, session_id, is_organizer = connection
+    await scoreboard_hub.connect(session_id, websocket, is_organizer)
     try:
         initial_payload = await session_update_payload(session_id)
         if initial_payload is None:
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
         await websocket.send_json(initial_payload)
+        if is_organizer:
+            await broadcast_session_participants(session_id)
         await _receive_commands(websocket, user, session_id)
     except WebSocketDisconnect:
         pass
@@ -34,7 +41,7 @@ async def session_websocket_handler(websocket: WebSocket, room_code: str) -> Non
         scoreboard_hub.disconnect(session_id, websocket)
 
 
-async def _authorize(websocket: WebSocket, room_code: str) -> tuple[User, UUID] | None:
+async def _authorize(websocket: WebSocket, room_code: str) -> tuple[User, UUID, bool] | None:
     token = websocket.query_params.get("token")
     payload = verify_access_token(token) if token else None
     if payload is None:
@@ -58,7 +65,8 @@ async def _authorize(websocket: WebSocket, room_code: str) -> tuple[User, UUID] 
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return None
 
-        if user.id != quiz_session.organizer_id:
+        is_organizer = user.id == quiz_session.organizer_id
+        if not is_organizer:
             participant_result = await session.execute(
                 select(SessionParticipant).where(
                     SessionParticipant.session_id == quiz_session.id,
@@ -69,7 +77,7 @@ async def _authorize(websocket: WebSocket, room_code: str) -> tuple[User, UUID] 
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return None
 
-        return user, quiz_session.id
+        return user, quiz_session.id, is_organizer
 
 
 async def _receive_commands(websocket: WebSocket, user: User, session_id: UUID) -> None:

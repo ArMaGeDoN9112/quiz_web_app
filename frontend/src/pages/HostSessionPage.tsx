@@ -9,7 +9,7 @@ import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { orderQuizItems } from '../features/quizSettings'
 import { useLiveScoreboard } from '../features/useLiveScoreboard'
-import type { PlaybackMode, Question, Session, SessionLiveUpdate, SessionScoreboard } from '../types/api'
+import type { PlaybackMode, Question, Session, SessionLiveUpdate, SessionParticipant, SessionScoreboard } from '../types/api'
 
 export function HostSessionPage() {
   const { sessionId } = useParams()
@@ -20,6 +20,7 @@ export function HostSessionPage() {
     (location.state as { session?: Session } | null)?.session ?? null,
   )
   const [scoreboard, setScoreboard] = useState<SessionScoreboard | null>(null)
+  const [participants, setParticipants] = useState<SessionParticipant[]>([])
   const [scoreboardError, setScoreboardError] = useState('')
   const [questions, setQuestions] = useState<Question[]>([])
   const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([])
@@ -50,7 +51,7 @@ export function HostSessionPage() {
     if (update.scoreboard.status === 'ended') navigate('/', { replace: true })
   }, [navigate])
 
-  const { sendCommand } = useLiveScoreboard(session?.id, session?.room_code, handleSessionUpdate)
+  const { sendCommand } = useLiveScoreboard(session?.id, session?.room_code, handleSessionUpdate, setParticipants)
 
   useEffect(() => {
     if (!session) return
@@ -179,6 +180,13 @@ export function HostSessionPage() {
               {!scoreboard?.entries.length && <li className="font-body text-sm text-muted">No participants yet.</li>}
             </ol>
             {scoreboard?.status === 'ended' && <p className="mt-4 font-body text-sm text-aurora">Final results saved.</p>}
+          </div>
+          <div className="mt-6 rounded-xl border border-white/15 bg-void/40 p-6 text-left">
+            <p className="font-display text-sm text-foreground">Joined participants ({participants.length})</p>
+            <ul className="mt-4 space-y-2">
+              {participants.map((participant) => <li key={participant.id} className="font-body text-sm text-muted">{participant.display_name}</li>)}
+              {!participants.length && <li className="font-body text-sm text-muted">No one has joined yet.</li>}
+            </ul>
           </div>
           <Link to="/dashboard" className="btn-ghost mt-8 inline-block">Back to dashboard</Link>
         </GlassPanel>

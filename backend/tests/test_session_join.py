@@ -3,8 +3,10 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.api.routes import sessions as session_routes
 from app.core.security import create_access_token
 from app.db.session import get_db_session
 from app.main import create_app
@@ -111,11 +113,17 @@ def _auth_header(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_participant_joins_waiting_session() -> None:
+def test_participant_joins_waiting_session(monkeypatch: pytest.MonkeyPatch) -> None:
     participant_user = _user("participant@example.com")
     quiz_session = _quiz_session()
     fake_session = FakeSession(results=[participant_user, quiz_session, None])
     client = _client_with_session(fake_session)
+    broadcasts: list[UUID] = []
+
+    async def broadcast(session_id: UUID) -> None:
+        broadcasts.append(session_id)
+
+    monkeypatch.setattr(session_routes, "broadcast_session_participants", broadcast)
 
     response = client.post(
         "/sessions/join",
@@ -132,6 +140,7 @@ def test_participant_joins_waiting_session() -> None:
     assert fake_session.added_participants[0].session_id == quiz_session.id
     assert fake_session.added_participants[0].user_id == participant_user.id
     assert fake_session.committed is True
+    assert broadcasts == [quiz_session.id]
 
 
 def test_participant_joins_active_session() -> None:

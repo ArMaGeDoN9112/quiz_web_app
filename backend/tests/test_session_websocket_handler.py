@@ -46,11 +46,11 @@ class SessionFactory:
 
 class FakeHub:
     def __init__(self) -> None:
-        self.connected: list[tuple[object, object]] = []
+        self.connected: list[tuple[object, object, bool]] = []
         self.disconnected: list[tuple[object, object]] = []
 
-    async def connect(self, session_id: object, websocket: object) -> None:
-        self.connected.append((session_id, websocket))
+    async def connect(self, session_id: object, websocket: object, is_organizer: bool) -> None:
+        self.connected.append((session_id, websocket, is_organizer))
 
     def disconnect(self, session_id: object, websocket: object) -> None:
         self.disconnected.append((session_id, websocket))
@@ -91,6 +91,7 @@ def test_websocket_handler_authorizes_dispatches_and_broadcasts(
     hub = FakeHub()
     dispatched: list[tuple[object, object, object]] = []
     broadcasts: list[object] = []
+    participant_broadcasts: list[object] = []
 
     async def dispatch(session: object, user: object, session_id: object, command: object) -> object:
         dispatched.append((session, user, session_id))
@@ -98,6 +99,9 @@ def test_websocket_handler_authorizes_dispatches_and_broadcasts(
 
     async def broadcast(session_id: object) -> None:
         broadcasts.append(session_id)
+
+    async def broadcast_participants(session_id: object) -> None:
+        participant_broadcasts.append(session_id)
 
     command_session = FakeSession([])
     monkeypatch.setattr(
@@ -114,6 +118,7 @@ def test_websocket_handler_authorizes_dispatches_and_broadcasts(
     )
     monkeypatch.setattr(session_websocket, "dispatch_session_command", dispatch)
     monkeypatch.setattr(session_websocket, "broadcast_session_update", broadcast)
+    monkeypatch.setattr(session_websocket, "broadcast_session_participants", broadcast_participants)
 
     asyncio.run(session_websocket.session_websocket_handler(websocket, " room42 "))
 
@@ -124,4 +129,5 @@ def test_websocket_handler_authorizes_dispatches_and_broadcasts(
     ]
     assert dispatched == [(command_session, organizer, quiz_session.id)]
     assert broadcasts == [quiz_session.id]
+    assert participant_broadcasts == [quiz_session.id]
     assert hub.disconnected == [(quiz_session.id, websocket)]

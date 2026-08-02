@@ -1,4 +1,4 @@
-import type { CurrentQuestion, SessionLiveUpdate, SessionScoreboard, SessionStatus } from '../types/api.js'
+import type { CurrentQuestion, SessionLiveUpdate, SessionParticipant, SessionScoreboard, SessionStatus } from '../types/api.js'
 
 const sessionStatuses = new Set<SessionStatus>(['waiting', 'active', 'ended'])
 
@@ -20,6 +20,16 @@ export function parseSessionUpdate(message: string): SessionLiveUpdate | null {
       scoreboard: payload.scoreboard,
       current_question: payload.current_question,
     }
+  } catch {
+    return null
+  }
+}
+
+export function parseParticipantsUpdate(message: string): SessionParticipant[] | null {
+  try {
+    const payload: unknown = JSON.parse(message)
+    if (!isRecord(payload) || payload.type !== 'participants.updated' || !Array.isArray(payload.participants)) return null
+    return payload.participants.every(isSessionParticipant) ? payload.participants : null
   } catch {
     return null
   }
@@ -81,6 +91,17 @@ function isScoreboardEntry(entry: unknown): boolean {
     && typeof entry.display_name === 'string'
     && typeof entry.score === 'number'
     && typeof entry.rank === 'number'
+  )
+}
+
+function isSessionParticipant(participant: unknown): participant is SessionParticipant {
+  return (
+    isRecord(participant)
+    && typeof participant.id === 'string'
+    && typeof participant.session_id === 'string'
+    && typeof participant.user_id === 'string'
+    && typeof participant.display_name === 'string'
+    && typeof participant.joined_at === 'string'
   )
 }
 

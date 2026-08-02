@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { api } from '../api/client.js'
-import type { SessionLiveUpdate } from '../types/api.js'
-import { parseCommandResult, parseSessionUpdate } from './liveScoreboard.js'
+import type { SessionLiveUpdate, SessionParticipant } from '../types/api.js'
+import { parseCommandResult, parseParticipantsUpdate, parseSessionUpdate } from './liveScoreboard.js'
 
 const RECONNECT_DELAY_MS = 2_000
 
@@ -15,6 +15,7 @@ export function useLiveScoreboard(
   sessionId: string | undefined,
   roomCode: string | undefined,
   onSessionUpdate: (update: SessionLiveUpdate) => void,
+  onParticipantsUpdate?: (participants: SessionParticipant[]) => void,
 ) {
   const socketRef = useRef<WebSocket | null>(null)
   const pendingCommandsRef = useRef(new Map<string, { resolve: () => void; reject: (reason: Error) => void }>())
@@ -53,6 +54,8 @@ export function useLiveScoreboard(
       nextSocket.onmessage = (event) => {
         const update = parseSessionUpdate(event.data)
         if (update !== null) onSessionUpdate(update)
+        const participants = parseParticipantsUpdate(event.data)
+        if (participants !== null) onParticipantsUpdate?.(participants)
         const result = parseCommandResult(event.data)
         if (result !== null) {
           const pending = pendingCommandsRef.current.get(result.request_id)
@@ -76,7 +79,7 @@ export function useLiveScoreboard(
       for (const pending of pendingCommands.values()) pending.reject(new Error('Live connection closed'))
       pendingCommands.clear()
     }
-  }, [onSessionUpdate, roomCode, sessionId])
+  }, [onParticipantsUpdate, onSessionUpdate, roomCode, sessionId])
 
   return { sendCommand }
 }

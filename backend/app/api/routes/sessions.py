@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, WebSocket, status
 
 from app.api.dependencies.auth import CurrentUserDep, OrganizerUserDep, ParticipantUserDep
+from app.core.live import broadcast_session_participants
 from app.db.session import SessionDep
 from app.schemas.session import (
     OrganizerSessionHistoryResponse,
@@ -101,7 +102,9 @@ async def join_session_endpoint(
     current_user: ParticipantUserDep,
     session: SessionDep,
 ) -> SessionParticipantResponse:
-    return await join_session(session, current_user, request.room_code)
+    participant = await join_session(session, current_user, request.room_code)
+    await broadcast_session_participants(participant.session_id)
+    return participant
 
 
 @websocket_router.websocket("/ws/sessions/{room_code}")

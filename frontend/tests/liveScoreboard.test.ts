@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { createScoreboardWebSocketUrl, parseCommandResult, parseSessionUpdate } from '../src/features/liveScoreboard.js'
+import { createScoreboardWebSocketUrl, parseCommandResult, parseParticipantsUpdate, parseSessionUpdate } from '../src/features/liveScoreboard.js'
 
 const scoreboard = {
   session_id: 'session',
@@ -14,6 +14,10 @@ assert.deepEqual(
   { scoreboard, current_question: null },
 )
 assert.equal(parseSessionUpdate(JSON.stringify({ type: 'session.updated', scoreboard })), null)
+assert.deepEqual(
+  parseParticipantsUpdate(JSON.stringify({ type: 'participants.updated', participants: [{ id: 'participant', session_id: 'session', user_id: 'user', display_name: 'Ada', joined_at: '2026-08-02T12:00:00Z' }] })),
+  [{ id: 'participant', session_id: 'session', user_id: 'user', display_name: 'Ada', joined_at: '2026-08-02T12:00:00Z' }],
+)
 assert.deepEqual(
   parseCommandResult(JSON.stringify({ type: 'command.accepted', request_id: 'request-1' })),
   { request_id: 'request-1', detail: null },
