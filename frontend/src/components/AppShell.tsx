@@ -10,13 +10,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-screen text-foreground">
       <header className="sticky top-0 z-50 border-b border-white/5 bg-void/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/" className="group flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-aurora/30 bg-aurora/10 text-sm font-display text-aurora transition group-hover:border-aurora/60">
-              N
-            </span>
-            <span className="font-display text-sm tracking-[0.2em] text-foreground">
-              NEURACLE
-            </span>
+          <Link to="/" className="font-body text-sm text-foreground transition hover:text-aurora">
+            HOME
           </Link>
 
           <nav className="flex items-center gap-4">

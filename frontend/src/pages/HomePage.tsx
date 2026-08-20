@@ -16,18 +16,14 @@ export function HomePage() {
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="max-w-3xl"
         >
-          <p className="mb-4 font-body text-xs uppercase tracking-[0.4em] text-plasma">
-            Live intelligence platform
-          </p>
           <h1 className="font-display text-4xl leading-tight text-foreground sm:text-6xl">
-            Quiz rooms that feel
+            Create a quiz
             <span className="block bg-gradient-to-r from-aurora via-violet to-plasma bg-clip-text text-transparent">
-              broadcast from the future
+              and play together
             </span>
           </h1>
           <p className="mt-6 max-w-xl font-body text-lg text-muted">
-            Organizers launch holographic room codes. Participants join in seconds.
-            Answers sync in real time across every screen.
+            Create a room, share its code, and see answers as they arrive.
           </p>
 
           <div className="mt-10 flex flex-wrap gap-4">

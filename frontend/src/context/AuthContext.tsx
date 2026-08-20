@@ -11,7 +11,7 @@ import {
 import { api } from '../api/client'
 import type { User, UserRole } from '../types/api'
 
-const TOKEN_KEY = 'neuracle_token'
+const TOKEN_KEY = 'quiz_token'
 
 interface AuthContextValue {
   user: User | null
